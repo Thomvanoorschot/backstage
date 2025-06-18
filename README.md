@@ -236,6 +236,13 @@ Message wrapper containing:
 
 This is an early-stage implementation, focusing on core actor framework concepts with topic-based messaging. The project is primarily meant as a learning exercise and may evolve significantly as understanding of both the language and actor patterns deepens.
 
+## Upcoming features
+
+- **Supervision tree**: Adding the ability to create a supervision tree with strategies
+- **Inbox back pressure**: Making the send be blocking as long as the receiver inbox is full
+- **Dead letter queue**: Undeliverable messages should end up in the DeadLetter queue
+- **Inspector**: A way for the user to inspect the current state of the actor system
+
 ## License
 
 MIT License - see LICENSE file for details.
