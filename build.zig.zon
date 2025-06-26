@@ -6,6 +6,7 @@
         "src",
         "build.zig",
         "build.zig.zon",
+        "inspector",
     },
     .dependencies = .{
         .libxev = .{
