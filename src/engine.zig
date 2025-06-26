@@ -6,11 +6,7 @@ const xev = @import("xev");
 const envlp = @import("envelope.zig");
 const type_utils = @import("type_utils.zig");
 const build_options = @import("build_options");
-
-const os = std.os;
-const fs = std.fs;
-const mem = std.mem;
-const c = std.c;
+const ispct = @import("inspector.zig");
 
 // This import will always workg© for ZLS
 const zignite = if (build_options.enable_inspector) @import("zignite") else {};
@@ -22,6 +18,7 @@ const Context = actor_ctx.Context;
 const MessageType = envlp.MessageType;
 const Envelope = envlp.Envelope;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
+const Inspector = ispct.Inspector;
 
 pub const ActorOptions = struct {
     id: []const u8,
@@ -36,67 +33,27 @@ pub const Engine = struct {
     registry: Registry,
     allocator: Allocator,
     loop: xev.Loop,
-    mmap_ptr: ?[]align(std.heap.page_size_min) u8 = null,
+    inspector: ?*Inspector = null,
     const Self = @This();
     pub fn init(allocator: Allocator) !Self {
-        return .{
+        var self = Self{
             .allocator = allocator,
             .registry = Registry.init(allocator),
             .loop = try xev.Loop.init(.{}),
         };
+        if (build_options.enable_inspector) {
+            self.inspector = try Inspector.init(allocator);
+        }
+        return self;
     }
 
     pub fn run(self: *Self) !void {
-        if (build_options.enable_inspector) {
-            const temp_file_path = "/tmp/backstage_mmap_data";
-            const file = try std.fs.createFileAbsolute(temp_file_path, .{ .read = true, .truncate = true });
-            defer file.close();
-
-            const file_size = 1024;
-            try file.setEndPos(file_size);
-
-            const mmap_ptr = try std.posix.mmap(
-                null,
-                file_size,
-                std.posix.PROT.READ | std.posix.PROT.WRITE,
-                .{ .TYPE = .SHARED },
-                file.handle,
-                0,
-            );
-            self.mmap_ptr = mmap_ptr;
-
-            const message = "Hello from engine!";
-            @memcpy(mmap_ptr[0..message.len], message);
-            mmap_ptr[message.len] = 0;
-
-            std.log.info("Engine wrote to mmap: '{s}'", .{message});
-
-
-            // This is temporarily hardcoded
-            const inspector_path = "/Users/thomvanoorschot/Development/backstage/inspector/zig-out/bin/inspector";
-            var inspector_process = std.process.Child.init(&[_][]const u8{
-                "/usr/bin/open",
-                "-a",
-                inspector_path,
-                "--args",
-                temp_file_path,
-            }, self.allocator);
-
-            inspector_process.stdin_behavior = .Close;
-            inspector_process.stdout_behavior = .Ignore;
-            inspector_process.stderr_behavior = .Ignore;
-
-            try inspector_process.spawn();
-
-            std.time.sleep(500_000_000);
-
-        }
         try self.loop.run(.until_done);
     }
 
     pub fn deinit(self: *Self) void {
-        if (self.mmap_ptr) |ptr| {
-            std.posix.munmap(ptr);
+        if (self.inspector != null) {
+            self.inspector.?.deinit();
         }
         self.loop.deinit();
         var it = self.registry.actorsIDMap.iterator();
@@ -118,6 +75,7 @@ pub const Engine = struct {
             self,
             ActorType,
             options,
+            self.inspector,
         );
         errdefer actor_interface.deinitFnPtr(actor_interface.impl) catch |err| {
             std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});

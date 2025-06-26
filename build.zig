@@ -16,6 +16,21 @@ pub fn build(b: *std.Build) void {
     const xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
 
     backstage_mod.addImport("xev", xev.module("xev"));
+
+    if (enable_inspector) {
+        const inspector_exe = b.addExecutable(.{
+            .name = "inspector",
+            .root_source_file = b.path("inspector/src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        if (b.lazyDependency("zignite", .{ .target = target, .optimize = optimize })) |dep| {
+            inspector_exe.root_module.addImport("zignite", dep.module("zignite"));
+        }
+
+        const install_inspector = b.addInstallArtifact(inspector_exe, .{});
+        b.getInstallStep().dependOn(&install_inspector.step);
+    }
 }
 
 const LibOptions = struct {
