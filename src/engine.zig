@@ -5,6 +5,11 @@ const std = @import("std");
 const xev = @import("xev");
 const envlp = @import("envelope.zig");
 const type_utils = @import("type_utils.zig");
+const build_options = @import("build_options");
+const ispct = @import("inspector.zig");
+
+// This import will always workg© for ZLS
+const zignite = if (build_options.enable_inspector) @import("zignite") else {};
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -13,23 +18,33 @@ const Context = actor_ctx.Context;
 const MessageType = envlp.MessageType;
 const Envelope = envlp.Envelope;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
+const Inspector = ispct.Inspector;
 
 pub const ActorOptions = struct {
     id: []const u8,
     capacity: usize = 1024,
 };
 
+pub const TestStruct = struct {
+    a: u8,
+};
+
 pub const Engine = struct {
     registry: Registry,
     allocator: Allocator,
     loop: xev.Loop,
+    inspector: ?*Inspector = null,
     const Self = @This();
     pub fn init(allocator: Allocator) !Self {
-        return .{
-            .registry = Registry.init(allocator),
+        var self = Self{
             .allocator = allocator,
+            .registry = Registry.init(allocator),
             .loop = try xev.Loop.init(.{}),
         };
+        if (build_options.enable_inspector) {
+            self.inspector = try Inspector.init(allocator);
+        }
+        return self;
     }
 
     pub fn run(self: *Self) !void {
@@ -37,6 +52,9 @@ pub const Engine = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        if (self.inspector != null) {
+            self.inspector.?.deinit();
+        }
         self.loop.deinit();
         var it = self.registry.actorsIDMap.iterator();
         while (it.next()) |entry| {
@@ -57,6 +75,7 @@ pub const Engine = struct {
             self,
             ActorType,
             options,
+            self.inspector,
         );
         errdefer actor_interface.deinitFnPtr(actor_interface.impl) catch |err| {
             std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});

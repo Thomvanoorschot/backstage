@@ -5,6 +5,7 @@ const ctxt = @import("context.zig");
 const envlp = @import("envelope.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
+const ispct = @import("inspector.zig");
 
 const Allocator = std.mem.Allocator;
 const Inbox = inbox.Inbox;
@@ -13,6 +14,7 @@ const Context = ctxt.Context;
 const Envelope = envlp.Envelope;
 const ActorOptions = eng.ActorOptions;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
+const Inspector = ispct.Inspector;
 
 // TODO This is a bit of a hack, storing it on the stack causes a segfault when the actor is destroyed
 var cancel_completion: xev.Completion = undefined;
@@ -25,7 +27,7 @@ pub const ActorInterface = struct {
     completion: xev.Completion = undefined,
     arena_state: std.heap.ArenaAllocator,
     is_shutting_down: bool = false,
-
+    inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
 
     const Self = @This();
@@ -35,6 +37,7 @@ pub const ActorInterface = struct {
         engine: *Engine,
         comptime ActorType: type,
         options: ActorOptions,
+        inspector: ?*Inspector,
     ) !*Self {
         const self = try allocator.create(Self);
         self.* = .{
@@ -44,6 +47,7 @@ pub const ActorInterface = struct {
             .inbox = undefined,
             .ctx = undefined,
             .impl = undefined,
+            .inspector = inspector,
         };
         errdefer self.arena_state.deinit();
         const ctx = try Context.init(
@@ -76,6 +80,9 @@ pub const ActorInterface = struct {
                 };
 
                 if (maybe_envelope) |envelope| {
+                    if (actor_interface.inspector) |inspector| {
+                        try inspector.envelopeReceived(actor_interface, envelope);
+                    }
                     const actor_impl = @as(*ActorType, @ptrCast(@alignCast(actor_interface.impl)));
 
                     switch (envelope.message_type) {
