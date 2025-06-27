@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
     if (enable_inspector) {
         const inspector_exe = b.addExecutable(.{
             .name = "inspector",
-            .root_source_file = b.path("inspector/src/main.zig"),
+            .root_source_file = b.path("src/inspector_exe.zig"),
             .target = target,
             .optimize = optimize,
         });
