@@ -42,17 +42,42 @@ pub fn main() !void {
     });
     defer e.deinit();
 
+    var last_state: ?InspectorState = null;
+    var last_state_hash: u64 = 0;
+
     while (e.startRender()) {
         defer e.endRender();
         const data_ptr: [*:0]const u8 = @ptrCast(mmap_ptr.ptr);
         const data_str = std.mem.span(data_ptr);
-        const data = try InspectorState.decode(data_str, allocator);
-        defer data.deinit();
+
+        const current_hash = std.hash_map.hashString(data_str);
+        if (current_hash != last_state_hash) {
+            if (last_state) |*ls| {
+                ls.deinit();
+            }
+
+            last_state = InspectorState.decode(data_str, allocator) catch |err| {
+                std.log.warn("Failed to decode inspector state: {}", .{err});
+                last_state = null;
+                last_state_hash = 0;
+                continue;
+            };
+            last_state_hash = current_hash;
+        }
+
         if (imgui.igBegin("Backstage Inspector", null, 0)) {
-            for (data.actors.items) |actor| {
-                imgui.igText(actor.id.Owned.str.ptr, .{});
+            if (last_state) |data| {
+                for (data.actors.items) |actor| {
+                    imgui.igText(actor.id.Owned.str.ptr, .{});
+                }
+            } else {
+                imgui.igText("No data available", .{});
             }
         }
         imgui.igEnd();
+    }
+
+    if (last_state) |*ls| {
+        ls.deinit();
     }
 }
