@@ -1,8 +1,10 @@
 const std = @import("std");
 const zignite = @import("zignite");
+const inspst = @import("inspector_state.pb.zig");
 
 const imgui = zignite.imgui;
 const engine = zignite.engine;
+const InspectorState = inspst.InspectorState;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -44,8 +46,12 @@ pub fn main() !void {
         defer e.endRender();
         const data_ptr: [*:0]const u8 = @ptrCast(mmap_ptr.ptr);
         const data_str = std.mem.span(data_ptr);
+        const data = try InspectorState.decode(data_str, allocator);
+        defer data.deinit();
         if (imgui.igBegin("Backstage Inspector", null, 0)) {
-            imgui.igText(data_str.ptr, .{});
+            for (data.actors.items) |actor| {
+                imgui.igText(actor.id.Owned.str.ptr, .{});
+            }
         }
         imgui.igEnd();
     }
