@@ -14,8 +14,26 @@ pub fn build(b: *std.Build) void {
     backstage_mod.addImport("build_options", options.createModule());
 
     const xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
-
     backstage_mod.addImport("xev", xev.module("xev"));
+
+    if (b.lazyDependency("protobuf", .{ .target = target, .optimize = optimize })) |dep| {
+        backstage_mod.addImport("protobuf", dep.module("protobuf"));
+
+        if (enable_inspector) {
+            const gen_proto = b.step("gen-proto", "generates zig files from protocol buffer definitions");
+            const protobuf = @import("protobuf");
+            const protoc_step = protobuf.RunProtocStep.create(b, dep.builder, target, .{
+                .destination_directory = b.path("src"),
+                .source_files = &.{
+                    "proto/inspector_state.proto",
+                },
+                .include_directories = &.{"proto"},
+            });
+
+            gen_proto.dependOn(&protoc_step.step);
+            b.getInstallStep().dependOn(gen_proto);
+        }
+    }
 
     if (enable_inspector) {
         const inspector_exe = b.addExecutable(.{

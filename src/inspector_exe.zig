@@ -12,7 +12,6 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-
     if (args.len < 2) {
         std.log.err("Usage: {s} <temp_file_path>\n", .{args[0]});
         return;
@@ -22,7 +21,9 @@ pub fn main() !void {
     const file = try std.fs.openFileAbsolute(file_path, .{ .mode = .read_only });
     defer file.close();
 
-    const file_size = 1024;
+    const file_stat = try file.stat();
+    const file_size = @max(file_stat.size, 1);
+
     const mmap_ptr = try std.posix.mmap(
         null,
         file_size,

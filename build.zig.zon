@@ -17,5 +17,10 @@
             .path = "../zignite",
             .lazy = true,
         },
+        .protobuf = .{
+            .url = "https://github.com/Arwalk/zig-protobuf/archive/master.tar.gz",
+            .hash = "protobuf-2.0.0-0e82akObGwBZQtrB7Qb6CTWSrwYKRPJ0M4L0CuTJmJ9G",
+            .lazy = true,
+        },
     },
 }

@@ -81,7 +81,9 @@ pub const ActorInterface = struct {
 
                 if (maybe_envelope) |envelope| {
                     if (actor_interface.inspector) |inspector| {
-                        try inspector.envelopeReceived(actor_interface, envelope);
+                        inspector.envelopeReceived(actor_interface, envelope) catch |err| {
+                            std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
+                        };
                     }
                     const actor_impl = @as(*ActorType, @ptrCast(@alignCast(actor_interface.impl)));
 

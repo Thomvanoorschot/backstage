@@ -1,0 +1,12 @@
+syntax = "proto2";
+
+package inspector_state;
+
+
+message InspectorState {
+    repeated ActorSnapshot actors = 1;
+}
+
+message ActorSnapshot {
+    required string id = 1;
+}

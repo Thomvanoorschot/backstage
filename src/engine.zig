@@ -82,12 +82,20 @@ pub const Engine = struct {
         };
 
         try self.registry.add(options.id, actor_interface);
+        if (self.inspector != null) {
+            self.inspector.?.actorSpawned(actor_interface) catch |err| {
+                std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
+            };
+        }
         return unsafeAnyOpaqueCast(ActorType, actor_interface.impl);
     }
     pub fn removeAndCleanupActor(self: *Self, id: []const u8) !void {
         const actor = self.registry.fetchRemove(id);
         if (actor) |a| {
             a.cleanupFrameworkResources();
+            self.inspector.?.actorTerminated(a) catch |err| {
+                std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
+            };
         }
     }
 
