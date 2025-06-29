@@ -11,11 +11,38 @@ const ActorSnapshot = inspst.ActorSnapshot;
 const MessageMetrics = inspst.MessageMetrics;
 const ManagedString = pb.ManagedString;
 
+const EnvelopeStats = struct {
+    time: f64 = 0.0,
+    delta_time: f32 = 0.0,
+    envelope_counter: u32 = 0,
+    envelopes_per_second: f64 = 0.0,
+    previous_time: f64 = 0.0,
+    refresh_time: f64 = 0.0,
+
+    fn tick(stats: *EnvelopeStats, now_secs: f64) void {
+        stats.time = now_secs;
+        stats.delta_time = @floatCast(stats.time - stats.previous_time);
+        stats.previous_time = stats.time;
+
+        if ((stats.time - stats.refresh_time) >= 1.0) {
+            std.log.info("envelope_counter: {d}", .{stats.envelope_counter});
+            const t = stats.time - stats.refresh_time;
+            const eps = @as(f64, @floatFromInt(stats.envelope_counter)) / t;
+
+            stats.envelopes_per_second = eps;
+            stats.refresh_time = stats.time;
+            stats.envelope_counter = 0;
+        }
+        stats.envelope_counter += 1;
+    }
+};
+
 pub const Inspector = struct {
     allocator: std.mem.Allocator,
     mmap_ptr: ?[]align(std.heap.page_size_min) u8 = null,
     inspector_process: ?std.process.Child = null,
     state: InspectorState,
+    envelope_stats: EnvelopeStats = .{},
 
     pub fn init(allocator: std.mem.Allocator) !*Inspector {
         const self = try allocator.create(Inspector);
@@ -69,6 +96,9 @@ pub const Inspector = struct {
 
     pub fn envelopeReceived(self: *Inspector, _: *ActorInterface, _: Envelope) !void {
         // try self.state.envelopeReceived(actor, envelope);
+        self.envelope_stats.tick(@floatFromInt(std.time.timestamp()));
+        std.log.info("envelopes_per_second: {d}", .{self.envelope_stats.envelopes_per_second});
+        self.state.messages_per_second = @floatCast(123);
         return self.tick();
     }
 

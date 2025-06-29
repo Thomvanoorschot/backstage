@@ -70,7 +70,7 @@ pub fn main() !void {
                 if (imgui.igBeginTabBar("InspectorTabs", 0)) {
                     if (imgui.igBeginTabItem("Actor", null, 0)) {
                         imgui.igText("Actzor Count: %d", data.actors.items.len);
-                        // imgui.igText("Messages Per Second: %d", data.message_metrics.?.messages_per_second);
+                        // imgui.igText("Messages Per Second: %f", data.messages_per_second);
                         for (data.actors.items) |actor| {
                             if (imgui.igTreeNode_Str(actor.id.Owned.str.ptr)) {
                                 // imgui.igText("Last Message At: %d", actor.message_metrics.?.last_message_at);
