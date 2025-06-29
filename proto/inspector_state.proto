@@ -5,8 +5,18 @@ package inspector_state;
 
 message InspectorState {
     repeated ActorSnapshot actors = 1;
+    required InboxMetrics inbox_metrics = 2;
+    required int64 messages_per_second = 4 [default = 0]; 
 }
 
 message ActorSnapshot {
     required string id = 1;
+    required InboxMetrics inbox_metrics = 2;
+}
+
+message InboxMetrics {
+    required int64 len = 1 [default = 0];
+    required int64 capacity = 2 [default = 0];
+    required int64 last_message_at = 3 [default = 0];
+    required int64 messages_per_second = 4 [default = 0];
 }

@@ -16,6 +16,11 @@ pub fn build(b: *std.Build) void {
     const xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
     backstage_mod.addImport("xev", xev.module("xev"));
 
+    const zignite_dep = b.lazyDependency("zignite", .{ .target = target, .optimize = optimize });
+    if (zignite_dep) |zd| {
+        backstage_mod.addImport("zignite", zd.module("zignite"));
+    }
+
     if (b.lazyDependency("protobuf", .{ .target = target, .optimize = optimize })) |protobuf_dep| {
         backstage_mod.addImport("protobuf", protobuf_dep.module("protobuf"));
 
@@ -39,8 +44,8 @@ pub fn build(b: *std.Build) void {
                 .target = target,
                 .optimize = optimize,
             });
-            if (b.lazyDependency("zignite", .{ .target = target, .optimize = optimize })) |zignite_dep| {
-                inspector_exe.root_module.addImport("zignite", zignite_dep.module("zignite"));
+            if (zignite_dep) |zd| {
+                inspector_exe.root_module.addImport("zignite", zd.module("zignite"));
             }
             inspector_exe.root_module.addImport("protobuf", protobuf_dep.module("protobuf"));
 

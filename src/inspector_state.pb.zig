@@ -11,9 +11,13 @@ const ManagedStruct = protobuf.ManagedStruct;
 
 pub const InspectorState = struct {
     actors: ArrayList(ActorSnapshot),
+    inbox_metrics: ?InboxMetrics = null,
+    messages_per_second: i64 = 0,
 
     pub const _desc_table = .{
         .actors = fd(1, .{ .List = .{ .SubMessage = {} } }),
+        .inbox_metrics = fd(2, .{ .SubMessage = {} }),
+        .messages_per_second = fd(4, .{ .Varint = .Simple }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());
@@ -21,9 +25,27 @@ pub const InspectorState = struct {
 
 pub const ActorSnapshot = struct {
     id: ManagedString,
+    inbox_metrics: ?InboxMetrics = null,
 
     pub const _desc_table = .{
         .id = fd(1, .String),
+        .inbox_metrics = fd(2, .{ .SubMessage = {} }),
+    };
+
+    pub usingnamespace protobuf.MessageMixins(@This());
+};
+
+pub const InboxMetrics = struct {
+    len: i64 = 0,
+    capacity: i64 = 0,
+    last_message_at: i64 = 0,
+    messages_per_second: i64 = 0,
+
+    pub const _desc_table = .{
+        .len = fd(1, .{ .Varint = .Simple }),
+        .capacity = fd(2, .{ .Varint = .Simple }),
+        .last_message_at = fd(3, .{ .Varint = .Simple }),
+        .messages_per_second = fd(4, .{ .Varint = .Simple }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());

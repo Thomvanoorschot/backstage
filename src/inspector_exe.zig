@@ -67,8 +67,24 @@ pub fn main() !void {
 
         if (imgui.igBegin("Backstage Inspector", null, 0)) {
             if (last_state) |data| {
-                for (data.actors.items) |actor| {
-                    imgui.igText(actor.id.Owned.str.ptr, .{});
+                if (imgui.igBeginTabBar("InspectorTabs", 0)) {
+                    if (imgui.igBeginTabItem("Actor", null, 0)) {
+                        imgui.igText("Actzor Count: %d", data.actors.items.len);
+                        // imgui.igText("Messages Per Second: %d", data.message_metrics.?.messages_per_second);
+                        for (data.actors.items) |actor| {
+                            if (imgui.igTreeNode_Str(actor.id.Owned.str.ptr)) {
+                                // imgui.igText("Last Message At: %d", actor.message_metrics.?.last_message_at);
+                                // imgui.igText("Messages Per Second: %d", actor.message_metrics.?.messages_per_second);
+                                imgui.igTreePop();
+                            }
+                        }
+                        imgui.igEndTabItem();
+                    }
+                    if (imgui.igBeginTabItem("Performance", null, 0)) {
+                        imgui.igText("Performance metrics here", .{});
+                        imgui.igEndTabItem();
+                    }
+                    imgui.igEndTabBar();
                 }
             } else {
                 imgui.igText("No data available", .{});

@@ -8,6 +8,7 @@ const ActorInterface = actr.ActorInterface;
 const Envelope = envlp.Envelope;
 const InspectorState = inspst.InspectorState;
 const ActorSnapshot = inspst.ActorSnapshot;
+const MessageMetrics = inspst.MessageMetrics;
 const ManagedString = pb.ManagedString;
 
 pub const Inspector = struct {
@@ -103,6 +104,7 @@ pub const Inspector = struct {
             if (self.mmap_ptr) |updated_ptr| {
                 @memset(updated_ptr, 0);
                 @memcpy(updated_ptr[0..message.len], message);
+                updated_ptr[message.len] = 0;
             }
         }
     }
