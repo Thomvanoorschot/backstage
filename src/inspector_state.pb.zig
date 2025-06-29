@@ -17,7 +17,7 @@ pub const InspectorState = struct {
     pub const _desc_table = .{
         .actors = fd(1, .{ .List = .{ .SubMessage = {} } }),
         .inbox_metrics = fd(2, .{ .SubMessage = {} }),
-        .messages_per_second = fd(4, .{ .FixedInt = .I64 }),
+        .messages_per_second = fd(3, .{ .FixedInt = .I64 }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());

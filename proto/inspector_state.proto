@@ -6,7 +6,7 @@ package inspector_state;
 message InspectorState {
     repeated ActorSnapshot actors = 1;
     required InboxMetrics inbox_metrics = 2;
-    required double messages_per_second = 4 [default = 0]; 
+    required double messages_per_second = 3 [default = 0]; 
 }
 
 message ActorSnapshot {

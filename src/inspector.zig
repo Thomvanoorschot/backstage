@@ -19,15 +19,15 @@ const EnvelopeStats = struct {
     previous_time: f64 = 0.0,
     refresh_time: f64 = 0.0,
 
-    fn tick(stats: *EnvelopeStats, now_secs: f64) void {
-        stats.time = now_secs;
+    fn tick(stats: *EnvelopeStats, now_millis: f64) void {
+        stats.time = now_millis;
         stats.delta_time = @floatCast(stats.time - stats.previous_time);
         stats.previous_time = stats.time;
 
         stats.envelope_counter += 1;
-        if ((stats.time - stats.refresh_time) >= 1.0) {
-            const t = stats.time - stats.refresh_time;
-            const eps = @as(f64, @floatFromInt(stats.envelope_counter)) / t;
+        if ((stats.time - stats.refresh_time) >= 1000.0) {
+            const t_millis = stats.time - stats.refresh_time;
+            const eps = @as(f64, @floatFromInt(stats.envelope_counter)) / (t_millis / 1000.0);
 
             stats.envelopes_per_second = eps;
             stats.refresh_time = stats.time;
@@ -95,7 +95,7 @@ pub const Inspector = struct {
 
     pub fn envelopeReceived(self: *Inspector, _: *ActorInterface, _: Envelope) !void {
         // try self.state.envelopeReceived(actor, envelope);
-        self.envelope_stats.tick(@floatFromInt(std.time.timestamp()));
+        self.envelope_stats.tick(@floatFromInt(std.time.milliTimestamp()));
         self.state.messages_per_second = self.envelope_stats.envelopes_per_second;
         return self.tick();
     }
