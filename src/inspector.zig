@@ -24,8 +24,8 @@ const EnvelopeStats = struct {
         stats.delta_time = @floatCast(stats.time - stats.previous_time);
         stats.previous_time = stats.time;
 
+        stats.envelope_counter += 1;
         if ((stats.time - stats.refresh_time) >= 1.0) {
-            std.log.info("envelope_counter: {d}", .{stats.envelope_counter});
             const t = stats.time - stats.refresh_time;
             const eps = @as(f64, @floatFromInt(stats.envelope_counter)) / t;
 
@@ -33,7 +33,6 @@ const EnvelopeStats = struct {
             stats.refresh_time = stats.time;
             stats.envelope_counter = 0;
         }
-        stats.envelope_counter += 1;
     }
 };
 
@@ -97,8 +96,7 @@ pub const Inspector = struct {
     pub fn envelopeReceived(self: *Inspector, _: *ActorInterface, _: Envelope) !void {
         // try self.state.envelopeReceived(actor, envelope);
         self.envelope_stats.tick(@floatFromInt(std.time.timestamp()));
-        std.log.info("envelopes_per_second: {d}", .{self.envelope_stats.envelopes_per_second});
-        self.state.messages_per_second = @floatCast(123);
+        self.state.messages_per_second = self.envelope_stats.envelopes_per_second;
         return self.tick();
     }
 
@@ -107,15 +105,18 @@ pub const Inspector = struct {
     ) !void {
         if (self.mmap_ptr) |ptr| {
             const message = try self.state.encode(self.allocator);
+            defer self.allocator.free(message);
 
-            if (message.len > ptr.len) {
+            const total_size = 4 + message.len;
+
+            if (total_size > ptr.len) {
                 std.posix.munmap(ptr);
 
                 const temp_file_path = "/tmp/backstage_mmap_data";
                 const file = try std.fs.openFileAbsolute(temp_file_path, .{ .mode = .read_write });
                 defer file.close();
 
-                const new_size = message.len + 256;
+                const new_size = total_size + 256;
                 std.log.info("Resizing mmap to {d} bytes", .{new_size});
                 try file.setEndPos(new_size);
 
@@ -133,8 +134,8 @@ pub const Inspector = struct {
 
             if (self.mmap_ptr) |updated_ptr| {
                 @memset(updated_ptr, 0);
-                @memcpy(updated_ptr[0..message.len], message);
-                updated_ptr[message.len] = 0;
+                std.mem.writeInt(u32, updated_ptr[0..4], @intCast(message.len), .little);
+                @memcpy(updated_ptr[4 .. 4 + message.len], message);
             }
         }
     }

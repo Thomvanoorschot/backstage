@@ -47,16 +47,35 @@ pub fn main() !void {
 
     while (e.startRender()) {
         defer e.endRender();
-        const data_ptr: [*:0]const u8 = @ptrCast(mmap_ptr.ptr);
-        const data_str = std.mem.span(data_ptr);
 
-        const current_hash = std.hash_map.hashString(data_str);
+        // if (file_size < 4) {
+        //     if (imgui.igBegin("Backstage Inspector", null, 0)) {
+        //         imgui.igText("No data available", .{});
+        //     }
+        //     imgui.igEnd();
+        //     continue;
+        // }
+
+        const length_bytes = mmap_ptr[0..4];
+        const data_length = std.mem.readInt(u32, length_bytes[0..4], .little);
+
+        // if (data_length == 0 or data_length > file_size - 4) {
+        //     if (imgui.igBegin("Backstage Inspector", null, 0)) {
+        //         imgui.igText("Invalid data", .{});
+        //     }
+        //     imgui.igEnd();
+        //     continue;
+        // }
+
+        const data_slice = mmap_ptr[4 .. 4 + data_length];
+
+        const current_hash = std.hash_map.hashString(data_slice);
         if (current_hash != last_state_hash) {
             if (last_state) |*ls| {
                 ls.deinit();
             }
 
-            last_state = InspectorState.decode(data_str, allocator) catch |err| {
+            last_state = InspectorState.decode(data_slice, allocator) catch |err| {
                 std.log.warn("Failed to decode inspector state: {}", .{err});
                 last_state = null;
                 last_state_hash = 0;
@@ -70,7 +89,7 @@ pub fn main() !void {
                 if (imgui.igBeginTabBar("InspectorTabs", 0)) {
                     if (imgui.igBeginTabItem("Actor", null, 0)) {
                         imgui.igText("Actzor Count: %d", data.actors.items.len);
-                        // imgui.igText("Messages Per Second: %f", data.messages_per_second);
+                        imgui.igText("Messages Per Second: %f", data.messages_per_second);
                         for (data.actors.items) |actor| {
                             if (imgui.igTreeNode_Str(actor.id.Owned.str.ptr)) {
                                 // imgui.igText("Last Message At: %d", actor.message_metrics.?.last_message_at);
