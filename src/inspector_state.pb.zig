@@ -11,11 +11,11 @@ const ManagedStruct = protobuf.ManagedStruct;
 
 pub const InspectorState = struct {
     actors: ArrayList(ActorSnapshot),
-    inbox_metrics: ?InboxMetrics = null,
+    inbox_throughput_metrics: ?InboxThroughputMetrics = null,
 
     pub const _desc_table = .{
         .actors = fd(1, .{ .List = .{ .SubMessage = {} } }),
-        .inbox_metrics = fd(2, .{ .SubMessage = {} }),
+        .inbox_throughput_metrics = fd(2, .{ .SubMessage = {} }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());
@@ -34,6 +34,22 @@ pub const ActorSnapshot = struct {
 };
 
 pub const InboxMetrics = struct {
+    len: i64 = 0,
+    capacity: i64 = 0,
+    last_message_at: i64 = 0,
+    throughput_metrics: ?InboxThroughputMetrics = null,
+
+    pub const _desc_table = .{
+        .len = fd(1, .{ .Varint = .Simple }),
+        .capacity = fd(2, .{ .Varint = .Simple }),
+        .last_message_at = fd(3, .{ .Varint = .Simple }),
+        .throughput_metrics = fd(4, .{ .SubMessage = {} }),
+    };
+
+    pub usingnamespace protobuf.MessageMixins(@This());
+};
+
+pub const InboxThroughputMetrics = struct {
     time: f64 = 0,
     delta_time: f32 = 0,
     envelope_counter: i32 = 0,

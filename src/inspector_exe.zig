@@ -48,34 +48,31 @@ pub fn main() !void {
     while (e.startRender()) {
         defer e.endRender();
 
-        // if (file_size < 4) {
-        //     if (imgui.igBegin("Backstage Inspector", null, 0)) {
-        //         imgui.igText("No data available", .{});
-        //     }
-        //     imgui.igEnd();
-        //     continue;
-        // }
-
         const length_bytes = mmap_ptr[0..4];
         const data_length = std.mem.readInt(u32, length_bytes[0..4], .little);
 
-        // if (data_length == 0 or data_length > file_size - 4) {
-        //     if (imgui.igBegin("Backstage Inspector", null, 0)) {
-        //         imgui.igText("Invalid data", .{});
-        //     }
-        //     imgui.igEnd();
-        //     continue;
-        // }
+        if (data_length == 0 or data_length > file_size - 4) {
+            std.log.info("Invalid data length: {d}", .{data_length});
+            continue;
+        }
 
-        const data_slice = mmap_ptr[4 .. 4 + data_length];
+        const data_copy = try allocator.alloc(u8, data_length);
+        defer allocator.free(data_copy);
+        @memcpy(data_copy, mmap_ptr[4 .. 4 + data_length]);
 
-        const current_hash = std.hash_map.hashString(data_slice);
+        const length_check = std.mem.readInt(u32, mmap_ptr[0..4], .little);
+        if (length_check != data_length) {
+            std.log.info("Length check mismatch: {d} != {d}", .{ length_check, data_length });
+            continue;
+        }
+
+        const current_hash = std.hash_map.hashString(data_copy);
         if (current_hash != last_state_hash) {
             if (last_state) |*ls| {
                 ls.deinit();
             }
 
-            last_state = InspectorState.decode(data_slice, allocator) catch |err| {
+            last_state = InspectorState.decode(data_copy, allocator) catch |err| {
                 std.log.warn("Failed to decode inspector state: {}", .{err});
                 last_state = null;
                 last_state_hash = 0;
@@ -91,12 +88,15 @@ pub fn main() !void {
                         imgui.igText("Actzor Count: %d", data.actors.items.len);
                         imgui.igText(
                             "Messages Per Second: %.2f",
-                            if (data.inbox_metrics != null) data.inbox_metrics.?.envelopes_per_second else 0.0,
+                            if (data.inbox_throughput_metrics != null)
+                                data.inbox_throughput_metrics.?.envelopes_per_second
+                            else
+                                0.0,
                         );
                         for (data.actors.items) |actor| {
                             if (imgui.igTreeNode_Str(actor.id.Owned.str.ptr)) {
                                 // imgui.igText("Last Message At: %d", actor.message_metrics.?.last_message_at);
-                                // imgui.igText("Messages Per Second: %d", actor.message_metrics.?.messages_per_second);
+                                imgui.igText("Messages Per Second: %.2f", actor.inbox_metrics.?.throughput_metrics.?.envelopes_per_second);
                                 imgui.igTreePop();
                             }
                         }

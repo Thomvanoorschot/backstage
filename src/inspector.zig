@@ -11,33 +11,12 @@ const ActorSnapshot = inspst.ActorSnapshot;
 const MessageMetrics = inspst.MessageMetrics;
 const ManagedString = pb.ManagedString;
 const InboxMetrics = inspst.InboxMetrics;
+const InboxThroughputMetrics = inspst.InboxThroughputMetrics;
 
-// const EnvelopeStats = struct {
-//     time: f64 = 0.0,
-//     delta_time: f32 = 0.0,
-//     envelope_counter: u32 = 0,
-//     envelopes_per_second: f64 = 0.0,
-//     previous_time: f64 = 0.0,
-//     refresh_time: f64 = 0.0,
-
-//     fn tick(stats: *EnvelopeStats, now_millis: f64) void {
-//         stats.time = now_millis;
-//         stats.delta_time = @floatCast(stats.time - stats.previous_time);
-//         stats.previous_time = stats.time;
-
-//         stats.envelope_counter += 1;
-//         if ((stats.time - stats.refresh_time) >= 1000.0) {
-//             const t_millis = stats.time - stats.refresh_time;
-//             const eps = @as(f64, @floatFromInt(stats.envelope_counter)) / (t_millis / 1000.0);
-
-//             stats.envelopes_per_second = eps;
-//             stats.refresh_time = stats.time;
-//             stats.envelope_counter = 0;
-//         }
-//     }
-// };
-
-fn updateInboxMetrics(inbox_metrics: *InboxMetrics, now_millis: f64) !void {
+fn updateInboxThroughputMetrics(
+    inbox_metrics: *InboxThroughputMetrics,
+    now_millis: f64,
+) !void {
     inbox_metrics.time = now_millis;
     inbox_metrics.delta_time = @floatCast(inbox_metrics.time - inbox_metrics.previous_time);
     inbox_metrics.previous_time = inbox_metrics.time;
@@ -58,7 +37,6 @@ pub const Inspector = struct {
     mmap_ptr: ?[]align(std.heap.page_size_min) u8 = null,
     inspector_process: ?std.process.Child = null,
     state: InspectorState,
-    // envelope_stats: EnvelopeStats = .{},
 
     pub fn init(allocator: std.mem.Allocator) !*Inspector {
         const self = try allocator.create(Inspector);
@@ -92,7 +70,7 @@ pub const Inspector = struct {
             .state = InspectorState.init(allocator),
         };
 
-        self.state.inbox_metrics = .{};
+        self.state.inbox_throughput_metrics = .{};
 
         return self;
     }
@@ -112,10 +90,29 @@ pub const Inspector = struct {
         try self.tick();
     }
 
-    pub fn envelopeReceived(self: *Inspector, _: *ActorInterface, _: Envelope) !void {
+    pub fn envelopeReceived(self: *Inspector, actor: *ActorInterface, _: Envelope) !void {
         // try self.state.envelopeReceived(actor, envelope);
-        try updateInboxMetrics(&self.state.inbox_metrics.?, @floatFromInt(std.time.milliTimestamp()));
-        self.state.inbox_metrics = self.state.inbox_metrics;
+        try updateInboxThroughputMetrics(&self.state.inbox_throughput_metrics.?, @floatFromInt(std.time.milliTimestamp()));
+
+        for (self.state.actors.items) |*actor_snapshot| {
+            if (std.mem.eql(u8, actor_snapshot.id.Owned.str, actor.ctx.actor_id)) {
+                const metrics = &(actor_snapshot.inbox_metrics orelse blk: {
+                    actor_snapshot.inbox_metrics = .{};
+                    break :blk actor_snapshot.inbox_metrics.?;
+                });
+                const throughput = &(metrics.throughput_metrics orelse blk: {
+                    metrics.throughput_metrics = .{};
+                    break :blk metrics.throughput_metrics.?;
+                });
+
+                metrics.len = @intCast(actor.inbox.len);
+                metrics.capacity = @intCast(actor.inbox.capacity);
+                metrics.last_message_at = std.time.milliTimestamp();
+                try updateInboxThroughputMetrics(throughput, @floatFromInt(std.time.milliTimestamp()));
+                break;
+            }
+        }
+
         return self.tick();
     }
 
