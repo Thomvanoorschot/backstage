@@ -32,11 +32,71 @@ fn updateInboxThroughputMetrics(
     }
 }
 
+const SharedBuffer = struct {
+    data: []u8,
+    size: u32,
+    sequence: u64,
+
+    fn init(allocator: std.mem.Allocator, initial_size: usize) !SharedBuffer {
+        return SharedBuffer{
+            .data = try allocator.alloc(u8, initial_size),
+            .size = 0,
+            .sequence = 0,
+        };
+    }
+
+    fn deinit(self: *SharedBuffer, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+    }
+
+    fn ensureCapacity(self: *SharedBuffer, allocator: std.mem.Allocator, needed_size: usize) !void {
+        if (self.data.len < needed_size) {
+            const new_capacity = @max(needed_size, self.data.len * 2);
+            const new_data = try allocator.alloc(u8, new_capacity);
+            allocator.free(self.data);
+            self.data = new_data;
+        }
+    }
+};
+
+const SharedMemoryHeader = struct {
+    const MAGIC: u32 = 0xDEADBEEF;
+    const VERSION: u32 = 1;
+
+    magic: u32,
+    version: u32,
+    active_buffer: u32,
+    buffer_sizes: [2]u32,
+    sequences: [2]u64,
+    sync_counter: u64, // Additional atomic variable for synchronization
+
+    fn init() SharedMemoryHeader {
+        return SharedMemoryHeader{
+            .magic = MAGIC,
+            .version = VERSION,
+            .active_buffer = 0,
+            .buffer_sizes = [2]u32{ 0, 0 },
+            .sequences = [2]u64{ 0, 0 },
+            .sync_counter = 0,
+        };
+    }
+
+    fn isValid(self: *const SharedMemoryHeader) bool {
+        return self.magic == MAGIC and self.version == VERSION;
+    }
+};
+
 pub const Inspector = struct {
     allocator: std.mem.Allocator,
     mmap_ptr: ?[]align(std.heap.page_size_min) u8 = null,
     inspector_process: ?std.process.Child = null,
     state: InspectorState,
+    buffers: [2]SharedBuffer,
+    current_buffer: u32,
+    sequence_counter: u64,
+
+    const HEADER_SIZE = @sizeOf(SharedMemoryHeader);
+    const INITIAL_BUFFER_SIZE = 4096;
 
     pub fn init(allocator: std.mem.Allocator) !*Inspector {
         const self = try allocator.create(Inspector);
@@ -44,12 +104,13 @@ pub const Inspector = struct {
         const file = try std.fs.createFileAbsolute(temp_file_path, .{ .read = true, .truncate = true });
         defer file.close();
 
-        const file_size = 1024;
-        try file.setEndPos(file_size);
+        // Calculate initial file size: header + 2 buffers
+        const initial_file_size = HEADER_SIZE + (INITIAL_BUFFER_SIZE * 2);
+        try file.setEndPos(initial_file_size);
 
         const mmap_ptr = try std.posix.mmap(
             null,
-            file_size,
+            initial_file_size,
             std.posix.PROT.READ | std.posix.PROT.WRITE,
             .{ .TYPE = .SHARED },
             file.handle,
@@ -63,12 +124,25 @@ pub const Inspector = struct {
 
         try inspector_process.spawn();
 
+        // Initialize buffers
+        const buffers = [2]SharedBuffer{
+            try SharedBuffer.init(allocator, 0), // These are just placeholders
+            try SharedBuffer.init(allocator, 0),
+        };
+
         self.* = .{
             .allocator = allocator,
             .mmap_ptr = mmap_ptr,
             .inspector_process = inspector_process,
             .state = InspectorState.init(allocator),
+            .buffers = buffers,
+            .current_buffer = 0,
+            .sequence_counter = 0,
         };
+
+        // Initialize shared memory header
+        const header = @as(*SharedMemoryHeader, @ptrCast(@alignCast(mmap_ptr.ptr)));
+        header.* = SharedMemoryHeader.init();
 
         self.state.inbox_throughput_metrics = .{};
 
@@ -91,7 +165,6 @@ pub const Inspector = struct {
     }
 
     pub fn envelopeReceived(self: *Inspector, actor: *ActorInterface, _: Envelope) !void {
-        // try self.state.envelopeReceived(actor, envelope);
         try updateInboxThroughputMetrics(&self.state.inbox_throughput_metrics.?, @floatFromInt(std.time.milliTimestamp()));
 
         for (self.state.actors.items) |*actor_snapshot| {
@@ -116,24 +189,24 @@ pub const Inspector = struct {
         return self.tick();
     }
 
-    pub fn tick(
-        self: *Inspector,
-    ) !void {
+    pub fn tick(self: *Inspector) !void {
         if (self.mmap_ptr) |ptr| {
             const message = try self.state.encode(self.allocator);
             defer self.allocator.free(message);
 
-            const total_size = 4 + message.len;
+            // Use the inactive buffer for writing
+            const write_buffer_index = 1 - self.current_buffer;
+            const required_size = HEADER_SIZE + (INITIAL_BUFFER_SIZE * 2) + message.len;
 
-            if (total_size > ptr.len) {
+            // Resize mmap if needed
+            if (ptr.len < required_size) {
                 std.posix.munmap(ptr);
 
                 const temp_file_path = "/tmp/backstage_mmap_data";
                 const file = try std.fs.openFileAbsolute(temp_file_path, .{ .mode = .read_write });
                 defer file.close();
 
-                const new_size = total_size + 256;
-                std.log.info("Resizing mmap to {d} bytes", .{new_size});
+                const new_size = required_size + 4096; // Add some padding
                 try file.setEndPos(new_size);
 
                 const new_mmap_ptr = try std.posix.mmap(
@@ -149,9 +222,36 @@ pub const Inspector = struct {
             }
 
             if (self.mmap_ptr) |updated_ptr| {
-                @memset(updated_ptr, 0);
-                std.mem.writeInt(u32, updated_ptr[0..4], @intCast(message.len), .little);
-                @memcpy(updated_ptr[4 .. 4 + message.len], message);
+                const header = @as(*SharedMemoryHeader, @ptrCast(@alignCast(updated_ptr.ptr)));
+
+                // Ensure header is valid
+                if (!header.isValid()) {
+                    header.* = SharedMemoryHeader.init();
+                }
+
+                // Calculate buffer positions
+                const buffer_offset = HEADER_SIZE + (write_buffer_index * INITIAL_BUFFER_SIZE);
+                const buffer_start = updated_ptr[buffer_offset..];
+
+                // Write data to inactive buffer
+                @memcpy(buffer_start[0..message.len], message);
+
+                // Increment sequence counter
+                self.sequence_counter += 1;
+
+                // Update buffer metadata with release ordering to ensure data writes happen-before
+                @atomicStore(u32, &header.buffer_sizes[write_buffer_index], @intCast(message.len), .release);
+                @atomicStore(u64, &header.sequences[write_buffer_index], self.sequence_counter, .release);
+
+                // Use an additional atomic operation with seq_cst to create a full barrier
+                // This replaces the fence and ensures all previous writes are visible
+                _ = @atomicRmw(u64, &header.sync_counter, .Add, 1, .seq_cst);
+
+                // Atomically switch to the new buffer with seq_cst to ensure total ordering
+                @atomicStore(u32, &header.active_buffer, write_buffer_index, .seq_cst);
+
+                // Update our current buffer index
+                self.current_buffer = write_buffer_index;
             }
         }
     }
@@ -171,5 +271,8 @@ pub const Inspector = struct {
         if (self.mmap_ptr) |ptr| {
             std.posix.munmap(ptr);
         }
+
+        self.buffers[0].deinit(self.allocator);
+        self.buffers[1].deinit(self.allocator);
     }
 };
