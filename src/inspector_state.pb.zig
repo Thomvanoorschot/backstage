@@ -12,12 +12,10 @@ const ManagedStruct = protobuf.ManagedStruct;
 pub const InspectorState = struct {
     actors: ArrayList(ActorSnapshot),
     inbox_metrics: ?InboxMetrics = null,
-    messages_per_second: f64 = 0,
 
     pub const _desc_table = .{
         .actors = fd(1, .{ .List = .{ .SubMessage = {} } }),
         .inbox_metrics = fd(2, .{ .SubMessage = {} }),
-        .messages_per_second = fd(3, .{ .FixedInt = .I64 }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());
@@ -25,25 +23,31 @@ pub const InspectorState = struct {
 
 pub const ActorSnapshot = struct {
     id: ManagedString,
+    inbox_metrics: ?InboxMetrics = null,
 
     pub const _desc_table = .{
         .id = fd(1, .String),
+        .inbox_metrics = fd(2, .{ .SubMessage = {} }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());
 };
 
 pub const InboxMetrics = struct {
-    len: i64 = 0,
-    capacity: i64 = 0,
-    last_message_at: i64 = 0,
-    messages_per_second: f64 = 0,
+    time: f64 = 0,
+    delta_time: f32 = 0,
+    envelope_counter: i32 = 0,
+    envelopes_per_second: f64 = 0,
+    previous_time: f64 = 0,
+    refresh_time: f64 = 0,
 
     pub const _desc_table = .{
-        .len = fd(1, .{ .Varint = .Simple }),
-        .capacity = fd(2, .{ .Varint = .Simple }),
-        .last_message_at = fd(3, .{ .Varint = .Simple }),
-        .messages_per_second = fd(4, .{ .FixedInt = .I64 }),
+        .time = fd(1, .{ .FixedInt = .I64 }),
+        .delta_time = fd(2, .{ .FixedInt = .I32 }),
+        .envelope_counter = fd(3, .{ .Varint = .Simple }),
+        .envelopes_per_second = fd(4, .{ .FixedInt = .I64 }),
+        .previous_time = fd(5, .{ .FixedInt = .I64 }),
+        .refresh_time = fd(6, .{ .FixedInt = .I64 }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());
