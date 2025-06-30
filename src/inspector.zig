@@ -68,7 +68,7 @@ const SharedMemoryHeader = struct {
     active_buffer: u32,
     buffer_sizes: [2]u32,
     sequences: [2]u64,
-    sync_counter: u64, // Additional atomic variable for synchronization
+    sync_counter: u64, 
 
     fn init() SharedMemoryHeader {
         return SharedMemoryHeader{
@@ -104,7 +104,6 @@ pub const Inspector = struct {
         const file = try std.fs.createFileAbsolute(temp_file_path, .{ .read = true, .truncate = true });
         defer file.close();
 
-        // Calculate initial file size: header + 2 buffers
         const initial_file_size = HEADER_SIZE + (INITIAL_BUFFER_SIZE * 2);
         try file.setEndPos(initial_file_size);
 
@@ -124,9 +123,8 @@ pub const Inspector = struct {
 
         try inspector_process.spawn();
 
-        // Initialize buffers
         const buffers = [2]SharedBuffer{
-            try SharedBuffer.init(allocator, 0), // These are just placeholders
+            try SharedBuffer.init(allocator, 0), 
             try SharedBuffer.init(allocator, 0),
         };
 
@@ -140,7 +138,6 @@ pub const Inspector = struct {
             .sequence_counter = 0,
         };
 
-        // Initialize shared memory header
         const header = @as(*SharedMemoryHeader, @ptrCast(@alignCast(mmap_ptr.ptr)));
         header.* = SharedMemoryHeader.init();
 
@@ -194,11 +191,9 @@ pub const Inspector = struct {
             const message = try self.state.encode(self.allocator);
             defer self.allocator.free(message);
 
-            // Use the inactive buffer for writing
             const write_buffer_index = 1 - self.current_buffer;
             const required_size = HEADER_SIZE + (INITIAL_BUFFER_SIZE * 2) + message.len;
 
-            // Resize mmap if needed
             if (ptr.len < required_size) {
                 std.posix.munmap(ptr);
 
@@ -206,7 +201,7 @@ pub const Inspector = struct {
                 const file = try std.fs.openFileAbsolute(temp_file_path, .{ .mode = .read_write });
                 defer file.close();
 
-                const new_size = required_size + 4096; // Add some padding
+                const new_size = required_size + 4096;
                 try file.setEndPos(new_size);
 
                 const new_mmap_ptr = try std.posix.mmap(
@@ -224,33 +219,24 @@ pub const Inspector = struct {
             if (self.mmap_ptr) |updated_ptr| {
                 const header = @as(*SharedMemoryHeader, @ptrCast(@alignCast(updated_ptr.ptr)));
 
-                // Ensure header is valid
                 if (!header.isValid()) {
                     header.* = SharedMemoryHeader.init();
                 }
 
-                // Calculate buffer positions
                 const buffer_offset = HEADER_SIZE + (write_buffer_index * INITIAL_BUFFER_SIZE);
                 const buffer_start = updated_ptr[buffer_offset..];
 
-                // Write data to inactive buffer
                 @memcpy(buffer_start[0..message.len], message);
 
-                // Increment sequence counter
                 self.sequence_counter += 1;
 
-                // Update buffer metadata with release ordering to ensure data writes happen-before
                 @atomicStore(u32, &header.buffer_sizes[write_buffer_index], @intCast(message.len), .release);
                 @atomicStore(u64, &header.sequences[write_buffer_index], self.sequence_counter, .release);
 
-                // Use an additional atomic operation with seq_cst to create a full barrier
-                // This replaces the fence and ensures all previous writes are visible
                 _ = @atomicRmw(u64, &header.sync_counter, .Add, 1, .seq_cst);
 
-                // Atomically switch to the new buffer with seq_cst to ensure total ordering
                 @atomicStore(u32, &header.active_buffer, write_buffer_index, .seq_cst);
 
-                // Update our current buffer index
                 self.current_buffer = write_buffer_index;
             }
         }

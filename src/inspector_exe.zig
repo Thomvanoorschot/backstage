@@ -15,7 +15,7 @@ const SharedMemoryHeader = struct {
     active_buffer: u32,
     buffer_sizes: [2]u32,
     sequences: [2]u64,
-    sync_counter: u64, // Additional atomic variable for synchronization
+    sync_counter: u64, 
 
     fn isValid(self: *const SharedMemoryHeader) bool {
         return self.magic == MAGIC and self.version == VERSION;
@@ -41,59 +41,50 @@ const SafeReader = struct {
     fn readData(self: *SafeReader, allocator: std.mem.Allocator) !?[]u8 {
         const header = @as(*const SharedMemoryHeader, @ptrCast(@alignCast(self.mmap_ptr.ptr)));
 
-        // Validate header
         if (!header.isValid()) {
             return null;
         }
 
-        // Check sync counter first with seq_cst to ensure we see all updates
         const sync_counter = @atomicLoad(u64, &header.sync_counter, .seq_cst);
         if (sync_counter <= self.last_sync_counter) {
-            return null; // No new updates
+            return null; 
         }
 
-        // === CRITICAL: Capture active buffer BEFORE reading ===
         const active_buffer_start = @atomicLoad(u32, &header.active_buffer, .acquire);
         if (active_buffer_start >= 2) {
-            return null; // Invalid buffer index
+            return null; 
         }
 
-        // Read sequence and size for this specific buffer
         const sequence = @atomicLoad(u64, &header.sequences[active_buffer_start], .acquire);
         const buffer_size = @atomicLoad(u32, &header.buffer_sizes[active_buffer_start], .acquire);
 
-        // Check if data has been updated
         if (sequence <= self.last_sequence) {
-            return null; // No new data
+            return null; 
         }
 
         if (buffer_size == 0 or buffer_size > INITIAL_BUFFER_SIZE) {
-            return null; // Invalid size
+            return null; 
         }
 
-        // Calculate buffer position
         const buffer_offset = HEADER_SIZE + (active_buffer_start * INITIAL_BUFFER_SIZE);
         if (buffer_offset + buffer_size > self.mmap_ptr.len) {
-            return null; // Buffer would exceed mmap bounds
+            return null; 
         }
 
-        // Copy data from the buffer we decided to read from
         const data_copy = try allocator.alloc(u8, buffer_size);
         const buffer_start = self.mmap_ptr[buffer_offset..];
         @memcpy(data_copy, buffer_start[0..buffer_size]);
 
-        // === CRITICAL: Verify EVERYTHING hasn't changed during read ===
         const active_buffer_end = @atomicLoad(u32, &header.active_buffer, .acquire);
         const sequence_check = @atomicLoad(u64, &header.sequences[active_buffer_start], .acquire);
         const sync_counter_check = @atomicLoad(u64, &header.sync_counter, .seq_cst);
 
-        // If ANY of these changed, the data we copied might be corrupted
         if (active_buffer_end != active_buffer_start or
             sequence_check != sequence or
             sync_counter_check != sync_counter)
         {
             allocator.free(data_copy);
-            return null; // Data was updated during read - retry
+            return null; 
         }
 
         self.last_sequence = sequence;
@@ -144,14 +135,11 @@ pub fn main() !void {
     while (e.startRender()) {
         defer e.endRender();
 
-        // Try to read new data
         if (reader.readData(allocator)) |data| {
             if (data != null) {
                 defer allocator.free(data.?);
 
-                // Decode new state
                 if (InspectorState.decode(data.?, allocator)) |new_state| {
-                    // Free old state
                     if (last_state) |*old_state| {
                         old_state.deinit();
                     }
@@ -161,11 +149,9 @@ pub fn main() !void {
                 }
             }
         } else |err| {
-            // Handle the case where readData returns an error
             std.log.debug("Failed to read data: {}", .{err});
         }
 
-        // Render UI
         if (imgui.igBegin("Backstage Inspector", null, 0)) {
             if (last_state) |data| {
                 if (imgui.igBeginTabBar("InspectorTabs", 0)) {
