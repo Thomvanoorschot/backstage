@@ -29,6 +29,7 @@ pub const ActorInterface = struct {
     is_shutting_down: bool = false,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
+    actor_type_name: []const u8,
 
     const Self = @This();
 
@@ -48,6 +49,7 @@ pub const ActorInterface = struct {
             .ctx = undefined,
             .impl = undefined,
             .inspector = inspector,
+            .actor_type_name = @typeName(ActorType),
         };
         errdefer self.arena_state.deinit();
         const ctx = try Context.init(

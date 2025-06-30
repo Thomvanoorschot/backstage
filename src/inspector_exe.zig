@@ -32,6 +32,9 @@ pub fn main() !void {
     defer e.deinit();
 
     var last_state: ?InspectorState = null;
+    var group_by_type: bool = false;
+    var sort_by_eps: bool = false;
+    var filter_buffer: [256]u8 = std.mem.zeroes([256]u8);
 
     while (e.startRender()) {
         defer e.endRender();
@@ -52,37 +55,33 @@ pub fn main() !void {
             std.log.warn("Failed to read data: {}", .{err});
         }
 
-        if (imgui.igBegin("Backstage Inspector", null, 0)) {
+        if (imgui.igBegin("Actor Inspector", null, 0)) {
             if (last_state) |data| {
-                if (imgui.igBeginTabBar("InspectorTabs", 0)) {
-                    if (imgui.igBeginTabItem("Actor", null, 0)) {
-                        imgui.igText("Actor Count: %d", data.actors.items.len);
-                        imgui.igText(
-                            "Messages Per Second: %.2f",
-                            if (data.inbox_throughput_metrics != null)
-                                data.inbox_throughput_metrics.?.rolling_average_eps
-                            else
-                                0.0,
-                        );
-                        for (data.actors.items) |actor| {
-                            if (imgui.igTreeNode_Str(actor.id.Owned.str.ptr)) {
-                                if (actor.inbox_metrics) |metrics| {
-                                    imgui.igText("Inbox Length: %d", metrics.len);
-                                    imgui.igText("Inbox Capacity: %d", metrics.capacity);
-                                    if (metrics.throughput_metrics) |throughput| {
-                                        imgui.igText("Messages Per Second: %.2f", throughput.rolling_average_eps);
-                                    }
-                                }
-                                imgui.igTreePop();
-                            }
-                        }
-                        imgui.igEndTabItem();
+                _ = imgui.igCheckbox("Group by Type", &group_by_type);
+
+                imgui.igSameLine(0, 20);
+                imgui.igText("Sort by");
+                imgui.igSameLine(0, 5);
+                if (imgui.igBeginCombo("##sort", if (sort_by_eps) "eps" else "ID", 0)) {
+                    if (imgui.igSelectable_Bool("ID", !sort_by_eps, 0, .{ .x = 0, .y = 0 })) {
+                        sort_by_eps = false;
                     }
-                    if (imgui.igBeginTabItem("Performance", null, 0)) {
-                        imgui.igText("Performance metrics here");
-                        imgui.igEndTabItem();
+                    if (imgui.igSelectable_Bool("eps", sort_by_eps, 0, .{ .x = 0, .y = 0 })) {
+                        sort_by_eps = true;
                     }
-                    imgui.igEndTabBar();
+                    imgui.igEndCombo();
+                }
+
+                imgui.igText("Filter");
+                imgui.igSameLine(0, 5);
+                _ = imgui.igInputText("##filter", &filter_buffer, filter_buffer.len, 0, null, null);
+
+                imgui.igSeparator();
+
+                if (group_by_type) {
+                    renderGroupedActors(data.actors.items, sort_by_eps);
+                } else {
+                    renderFlatActors(data.actors.items, sort_by_eps);
                 }
             } else {
                 imgui.igText("No data available");
@@ -94,4 +93,176 @@ pub fn main() !void {
     if (last_state) |*ls| {
         ls.deinit();
     }
+}
+
+fn renderFlatActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) void {
+    imgui.igText("Actors");
+
+    if (imgui.igBeginTable("ActorsTable", 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
+        imgui.igTableSetupColumn("ID", 0, 0, 0);
+        imgui.igTableSetupColumn("Name", 0, 0, 0);
+        imgui.igTableSetupColumn("State", 0, 0, 0);
+        imgui.igTableSetupColumn("eps", 0, 0, 0);
+        imgui.igTableHeadersRow();
+
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const temp_allocator = arena.allocator();
+
+        const sorted_actors = temp_allocator.alloc(inspst.ActorSnapshot, actors.len) catch return;
+        @memcpy(sorted_actors, actors);
+
+        if (sort_by_eps) {
+            std.mem.sort(inspst.ActorSnapshot, sorted_actors, {}, compareByEps);
+        } else {
+            std.mem.sort(inspst.ActorSnapshot, sorted_actors, {}, compareById);
+        }
+
+        for (sorted_actors, 0..) |actor, i| {
+            imgui.igTableNextRow(0, 0);
+
+            _ = imgui.igTableSetColumnIndex(@intCast(0));
+            imgui.igText("%d", i + 1);
+
+            _ = imgui.igTableSetColumnIndex(@intCast(1));
+            const actor_type = extractActorType(actor.id.Owned.str);
+            imgui.igText("%s", actor_type.ptr);
+
+            _ = imgui.igTableSetColumnIndex(@intCast(2));
+            const state = if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0) "Running" else "Idle";
+            imgui.igText("%s", state.ptr);
+
+            _ = imgui.igTableSetColumnIndex(@intCast(3));
+            const eps = if (actor.inbox_metrics) |metrics|
+                if (metrics.throughput_metrics) |throughput|
+                    throughput.rolling_average_eps
+                else
+                    0.0
+            else
+                0.0;
+            if (eps == 0.0) {
+                imgui.igText("0,0");
+            } else {
+                imgui.igText("%.1f", eps);
+            }
+        }
+
+        imgui.igEndTable();
+    }
+}
+
+fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) void {
+    imgui.igText("Actor Groups");
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const temp_allocator = arena.allocator();
+
+    var groups = std.StringHashMap(std.ArrayList(inspst.ActorSnapshot)).init(temp_allocator);
+    defer {
+        var it = groups.iterator();
+        while (it.next()) |entry| {
+            entry.value_ptr.deinit();
+        }
+        groups.deinit();
+    }
+
+    for (actors) |actor| {
+        const actor_type = extractActorType(actor.id.Owned.str);
+        const owned_type = temp_allocator.dupe(u8, actor_type) catch continue;
+
+        var group = groups.getPtr(owned_type);
+        if (group == null) {
+            groups.put(owned_type, std.ArrayList(inspst.ActorSnapshot).init(temp_allocator)) catch continue;
+            group = groups.getPtr(owned_type);
+        }
+        group.?.append(actor) catch continue;
+    }
+
+    var group_it = groups.iterator();
+    while (group_it.next()) |entry| {
+        const group_name = entry.key_ptr.*;
+        const group_actors = entry.value_ptr.*;
+
+        if (sort_by_eps) {
+            std.mem.sort(inspst.ActorSnapshot, group_actors.items, {}, compareByEps);
+        } else {
+            std.mem.sort(inspst.ActorSnapshot, group_actors.items, {}, compareById);
+        }
+
+        if (imgui.igCollapsingHeader_TreeNodeFlags(group_name.ptr, imgui.ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (imgui.igBeginTable(group_name.ptr, 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
+                imgui.igTableSetupColumn("ID", 0, 0, 0);
+                imgui.igTableSetupColumn("Name", 0, 0, 0);
+                imgui.igTableSetupColumn("State", 0, 0, 0);
+                imgui.igTableSetupColumn("eps", 0, 0, 0);
+                imgui.igTableHeadersRow();
+
+                for (group_actors.items, 0..) |actor, i| {
+                    imgui.igTableNextRow(0, 0);
+
+                    _ = imgui.igTableSetColumnIndex(@intCast(0));
+                    imgui.igText("%d", i + 1);
+
+                    _ = imgui.igTableSetColumnIndex(@intCast(1));
+                    imgui.igText("%s", group_name.ptr);
+
+                    _ = imgui.igTableSetColumnIndex(@intCast(2));
+                    const state = if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0) "Running" else "Idle";
+                    imgui.igText("%s", state.ptr);
+
+                    _ = imgui.igTableSetColumnIndex(@intCast(3));
+                    const eps = if (actor.inbox_metrics) |metrics|
+                        if (metrics.throughput_metrics) |throughput|
+                            throughput.rolling_average_eps
+                        else
+                            0.0
+                    else
+                        0.0;
+                    if (eps == 0.0) {
+                        imgui.igText("0,0");
+                    } else {
+                        imgui.igText("%.1f", eps);
+                    }
+                }
+
+                imgui.igEndTable();
+            }
+        }
+    }
+}
+
+fn extractActorType(actor_id: []const u8) []const u8 {
+    var i = actor_id.len;
+    while (i > 0) {
+        i -= 1;
+        if (actor_id[i] == '-') {
+            return actor_id[0..i];
+        }
+    }
+    return actor_id;
+}
+
+fn compareByEps(_: void, a: inspst.ActorSnapshot, b: inspst.ActorSnapshot) bool {
+    const eps_a = if (a.inbox_metrics) |metrics|
+        if (metrics.throughput_metrics) |throughput|
+            throughput.rolling_average_eps
+        else
+            0.0
+    else
+        0.0;
+
+    const eps_b = if (b.inbox_metrics) |metrics|
+        if (metrics.throughput_metrics) |throughput|
+            throughput.rolling_average_eps
+        else
+            0.0
+    else
+        0.0;
+
+    return eps_a > eps_b;
+}
+
+fn compareById(_: void, a: inspst.ActorSnapshot, b: inspst.ActorSnapshot) bool {
+    return std.mem.lessThan(u8, a.id.Owned.str, b.id.Owned.str);
 }
