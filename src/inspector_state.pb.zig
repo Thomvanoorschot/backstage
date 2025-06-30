@@ -23,11 +23,13 @@ pub const InspectorState = struct {
 
 pub const ActorSnapshot = struct {
     id: ManagedString,
+    actor_type_name: ManagedString,
     inbox_metrics: ?InboxMetrics = null,
 
     pub const _desc_table = .{
         .id = fd(1, .String),
-        .inbox_metrics = fd(2, .{ .SubMessage = {} }),
+        .actor_type_name = fd(2, .String),
+        .inbox_metrics = fd(3, .{ .SubMessage = {} }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());

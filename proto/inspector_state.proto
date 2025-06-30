@@ -11,7 +11,8 @@ message InspectorState {
 
 message ActorSnapshot {
     required string id = 1;
-    optional InboxMetrics inbox_metrics = 2;
+    required string actor_type_name = 2;
+    optional InboxMetrics inbox_metrics = 3;
 }
 
 // message InboxMetrics {

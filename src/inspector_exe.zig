@@ -101,8 +101,8 @@ fn renderFlatActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) voi
     if (imgui.igBeginTable("ActorsTable", 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
         imgui.igTableSetupColumn("ID", 0, 0, 0);
         imgui.igTableSetupColumn("Name", 0, 0, 0);
-        imgui.igTableSetupColumn("State", 0, 0, 0);
         imgui.igTableSetupColumn("eps", 0, 0, 0);
+        imgui.igTableSetupColumn("Inbox Length", 0, 0, 0);
         imgui.igTableHeadersRow();
 
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -125,14 +125,9 @@ fn renderFlatActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) voi
             imgui.igText("%d", i + 1);
 
             _ = imgui.igTableSetColumnIndex(@intCast(1));
-            const actor_type = extractActorType(actor.id.Owned.str);
-            imgui.igText("%s", actor_type.ptr);
+            imgui.igText("%s", actor.actor_type_name.Owned.str.ptr);
 
             _ = imgui.igTableSetColumnIndex(@intCast(2));
-            const state = if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0) "Running" else "Idle";
-            imgui.igText("%s", state.ptr);
-
-            _ = imgui.igTableSetColumnIndex(@intCast(3));
             const eps = if (actor.inbox_metrics) |metrics|
                 if (metrics.throughput_metrics) |throughput|
                     throughput.rolling_average_eps
@@ -145,6 +140,10 @@ fn renderFlatActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) voi
             } else {
                 imgui.igText("%.1f", eps);
             }
+
+            _ = imgui.igTableSetColumnIndex(@intCast(3));
+            const inbox_length = if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0) actor.inbox_metrics.?.len else 0;
+            imgui.igText("%d", inbox_length);
         }
 
         imgui.igEndTable();
@@ -168,13 +167,10 @@ fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) 
     }
 
     for (actors) |actor| {
-        const actor_type = extractActorType(actor.id.Owned.str);
-        const owned_type = temp_allocator.dupe(u8, actor_type) catch continue;
-
-        var group = groups.getPtr(owned_type);
+        var group = groups.getPtr(actor.actor_type_name.Owned.str);
         if (group == null) {
-            groups.put(owned_type, std.ArrayList(inspst.ActorSnapshot).init(temp_allocator)) catch continue;
-            group = groups.getPtr(owned_type);
+            groups.put(actor.actor_type_name.Owned.str, std.ArrayList(inspst.ActorSnapshot).init(temp_allocator)) catch continue;
+            group = groups.getPtr(actor.actor_type_name.Owned.str);
         }
         group.?.append(actor) catch continue;
     }
@@ -194,8 +190,8 @@ fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) 
             if (imgui.igBeginTable(group_name.ptr, 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
                 imgui.igTableSetupColumn("ID", 0, 0, 0);
                 imgui.igTableSetupColumn("Name", 0, 0, 0);
-                imgui.igTableSetupColumn("State", 0, 0, 0);
                 imgui.igTableSetupColumn("eps", 0, 0, 0);
+                imgui.igTableSetupColumn("Inbox Length", 0, 0, 0);
                 imgui.igTableHeadersRow();
 
                 for (group_actors.items, 0..) |actor, i| {
@@ -208,10 +204,6 @@ fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) 
                     imgui.igText("%s", group_name.ptr);
 
                     _ = imgui.igTableSetColumnIndex(@intCast(2));
-                    const state = if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0) "Running" else "Idle";
-                    imgui.igText("%s", state.ptr);
-
-                    _ = imgui.igTableSetColumnIndex(@intCast(3));
                     const eps = if (actor.inbox_metrics) |metrics|
                         if (metrics.throughput_metrics) |throughput|
                             throughput.rolling_average_eps
@@ -224,23 +216,16 @@ fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) 
                     } else {
                         imgui.igText("%.1f", eps);
                     }
+
+                    _ = imgui.igTableSetColumnIndex(@intCast(3));
+                    const inbox_length = if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0) actor.inbox_metrics.?.len else 0;
+                    imgui.igText("%d", inbox_length);
                 }
 
                 imgui.igEndTable();
             }
         }
     }
-}
-
-fn extractActorType(actor_id: []const u8) []const u8 {
-    var i = actor_id.len;
-    while (i > 0) {
-        i -= 1;
-        if (actor_id[i] == '-') {
-            return actor_id[0..i];
-        }
-    }
-    return actor_id;
 }
 
 fn compareByEps(_: void, a: inspst.ActorSnapshot, b: inspst.ActorSnapshot) bool {

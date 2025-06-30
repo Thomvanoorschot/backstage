@@ -49,7 +49,14 @@ pub const ActorInterface = struct {
             .ctx = undefined,
             .impl = undefined,
             .inspector = inspector,
-            .actor_type_name = @typeName(ActorType),
+            .actor_type_name = blk: {
+                const full_name = @typeName(ActorType);
+                if (std.mem.lastIndexOf(u8, full_name, ".")) |last_dot_index| {
+                    break :blk full_name[last_dot_index + 1 ..];
+                } else {
+                    break :blk full_name;
+                }
+            },
         };
         errdefer self.arena_state.deinit();
         const ctx = try Context.init(
