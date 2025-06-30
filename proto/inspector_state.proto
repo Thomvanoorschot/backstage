@@ -1,0 +1,40 @@
+syntax = "proto2";
+
+package inspector_state;
+
+
+message InspectorState {
+    repeated ActorSnapshot actors = 1;
+    optional InboxThroughputMetrics inbox_throughput_metrics = 2;
+    // required double messages_per_second = 3 [default = 0]; 
+}
+
+message ActorSnapshot {
+    required string id = 1;
+    required string actor_type_name = 2;
+    optional InboxMetrics inbox_metrics = 3;
+}
+
+// message InboxMetrics {
+//     required int64 len = 1 [default = 0];
+//     required int64 capacity = 2 [default = 0];
+//     required int64 last_message_at = 3 [default = 0];
+//     required double messages_per_second = 4 [default = 0];
+// }
+
+message InboxMetrics {
+    required int64 len = 1 [default = 0];
+    required int64 capacity = 2 [default = 0];
+    required int64 last_message_at = 3 [default = 0];
+    required InboxThroughputMetrics throughput_metrics = 4;
+}
+
+message InboxThroughputMetrics {
+    required double time = 1 [default = 0.0];
+    required float delta_time = 2 [default = 0.0];
+    required int32 envelope_counter = 3 [default = 0];
+    required double previous_time = 4 [default = 0.0];
+    required double refresh_time = 5 [default = 0.0];
+    required double rolling_average_eps = 6 [default = 0.0];
+    required double smoothing_factor = 7 [default = 0.1];
+}

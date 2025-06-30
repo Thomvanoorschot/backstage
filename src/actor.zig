@@ -29,6 +29,7 @@ pub const ActorInterface = struct {
     is_shutting_down: bool = false,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
+    actor_type_name: []const u8,
 
     const Self = @This();
 
@@ -48,6 +49,14 @@ pub const ActorInterface = struct {
             .ctx = undefined,
             .impl = undefined,
             .inspector = inspector,
+            .actor_type_name = blk: {
+                const full_name = @typeName(ActorType);
+                if (std.mem.lastIndexOf(u8, full_name, ".")) |last_dot_index| {
+                    break :blk full_name[last_dot_index + 1 ..];
+                } else {
+                    break :blk full_name;
+                }
+            },
         };
         errdefer self.arena_state.deinit();
         const ctx = try Context.init(
@@ -81,7 +90,9 @@ pub const ActorInterface = struct {
 
                 if (maybe_envelope) |envelope| {
                     if (actor_interface.inspector) |inspector| {
-                        try inspector.envelopeReceived(actor_interface, envelope);
+                        inspector.envelopeReceived(actor_interface, envelope) catch |err| {
+                            std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
+                        };
                     }
                     const actor_impl = @as(*ActorType, @ptrCast(@alignCast(actor_interface.impl)));
 
