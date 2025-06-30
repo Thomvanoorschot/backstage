@@ -52,44 +52,48 @@ const SafeReader = struct {
             return null; // No new updates
         }
 
-        // Atomically read the active buffer index with acquire ordering
-        const active_buffer = @atomicLoad(u32, &header.active_buffer, .acquire);
-        if (active_buffer >= 2) {
+        // === CRITICAL: Capture active buffer BEFORE reading ===
+        const active_buffer_start = @atomicLoad(u32, &header.active_buffer, .acquire);
+        if (active_buffer_start >= 2) {
             return null; // Invalid buffer index
         }
 
-        // Atomically read the sequence number with acquire ordering
-        const sequence = @atomicLoad(u64, &header.sequences[active_buffer], .acquire);
+        // Read sequence and size for this specific buffer
+        const sequence = @atomicLoad(u64, &header.sequences[active_buffer_start], .acquire);
+        const buffer_size = @atomicLoad(u32, &header.buffer_sizes[active_buffer_start], .acquire);
 
         // Check if data has been updated
         if (sequence <= self.last_sequence) {
             return null; // No new data
         }
 
-        // Atomically read the buffer size with acquire ordering
-        const buffer_size = @atomicLoad(u32, &header.buffer_sizes[active_buffer], .acquire);
         if (buffer_size == 0 or buffer_size > INITIAL_BUFFER_SIZE) {
             return null; // Invalid size
         }
 
         // Calculate buffer position
-        const buffer_offset = HEADER_SIZE + (active_buffer * INITIAL_BUFFER_SIZE);
+        const buffer_offset = HEADER_SIZE + (active_buffer_start * INITIAL_BUFFER_SIZE);
         if (buffer_offset + buffer_size > self.mmap_ptr.len) {
             return null; // Buffer would exceed mmap bounds
         }
 
-        // Copy data to avoid reading while writer is updating
+        // Copy data from the buffer we decided to read from
         const data_copy = try allocator.alloc(u8, buffer_size);
         const buffer_start = self.mmap_ptr[buffer_offset..];
         @memcpy(data_copy, buffer_start[0..buffer_size]);
 
-        // Verify sequence and sync counter haven't changed during read (detect torn reads)
-        const sequence_check = @atomicLoad(u64, &header.sequences[active_buffer], .acquire);
+        // === CRITICAL: Verify EVERYTHING hasn't changed during read ===
+        const active_buffer_end = @atomicLoad(u32, &header.active_buffer, .acquire);
+        const sequence_check = @atomicLoad(u64, &header.sequences[active_buffer_start], .acquire);
         const sync_counter_check = @atomicLoad(u64, &header.sync_counter, .seq_cst);
 
-        if (sequence_check != sequence or sync_counter_check != sync_counter) {
+        // If ANY of these changed, the data we copied might be corrupted
+        if (active_buffer_end != active_buffer_start or
+            sequence_check != sequence or
+            sync_counter_check != sync_counter)
+        {
             allocator.free(data_copy);
-            return null; // Data was updated during read
+            return null; // Data was updated during read - retry
         }
 
         self.last_sequence = sequence;
@@ -157,7 +161,8 @@ pub fn main() !void {
                 }
             }
         } else |err| {
-            std.log.debug("No new data available: {}", .{err});
+            // Handle the case where readData returns an error
+            std.log.debug("Failed to read data: {}", .{err});
         }
 
         // Render UI
