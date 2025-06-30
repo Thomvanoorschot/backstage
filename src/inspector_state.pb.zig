@@ -53,17 +53,19 @@ pub const InboxThroughputMetrics = struct {
     time: f64 = 0,
     delta_time: f32 = 0,
     envelope_counter: i32 = 0,
-    envelopes_per_second: f64 = 0,
     previous_time: f64 = 0,
     refresh_time: f64 = 0,
+    rolling_average_eps: f64 = 0,
+    smoothing_factor: f64 = 0.1,
 
     pub const _desc_table = .{
         .time = fd(1, .{ .FixedInt = .I64 }),
         .delta_time = fd(2, .{ .FixedInt = .I32 }),
         .envelope_counter = fd(3, .{ .Varint = .Simple }),
-        .envelopes_per_second = fd(4, .{ .FixedInt = .I64 }),
-        .previous_time = fd(5, .{ .FixedInt = .I64 }),
-        .refresh_time = fd(6, .{ .FixedInt = .I64 }),
+        .previous_time = fd(4, .{ .FixedInt = .I64 }),
+        .refresh_time = fd(5, .{ .FixedInt = .I64 }),
+        .rolling_average_eps = fd(6, .{ .FixedInt = .I64 }),
+        .smoothing_factor = fd(7, .{ .FixedInt = .I64 }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());

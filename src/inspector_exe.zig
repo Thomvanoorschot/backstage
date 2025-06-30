@@ -51,7 +51,7 @@ pub fn main() !void {
         } else |err| {
             std.log.warn("Failed to read data: {}", .{err});
         }
-        
+
         if (imgui.igBegin("Backstage Inspector", null, 0)) {
             if (last_state) |data| {
                 if (imgui.igBeginTabBar("InspectorTabs", 0)) {
@@ -60,7 +60,7 @@ pub fn main() !void {
                         imgui.igText(
                             "Messages Per Second: %.2f",
                             if (data.inbox_throughput_metrics != null)
-                                data.inbox_throughput_metrics.?.envelopes_per_second
+                                data.inbox_throughput_metrics.?.rolling_average_eps
                             else
                                 0.0,
                         );
@@ -70,7 +70,7 @@ pub fn main() !void {
                                     imgui.igText("Inbox Length: %d", metrics.len);
                                     imgui.igText("Inbox Capacity: %d", metrics.capacity);
                                     if (metrics.throughput_metrics) |throughput| {
-                                        imgui.igText("Messages Per Second: %.2f", throughput.envelopes_per_second);
+                                        imgui.igText("Messages Per Second: %.2f", throughput.rolling_average_eps);
                                     }
                                 }
                                 imgui.igTreePop();

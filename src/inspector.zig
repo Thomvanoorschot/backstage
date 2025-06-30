@@ -122,7 +122,17 @@ fn updateInboxThroughputMetrics(
         const t_millis = inbox_metrics.time - inbox_metrics.refresh_time;
         const eps = @as(f64, @floatFromInt(inbox_metrics.envelope_counter)) / (t_millis / 1000.0);
 
-        inbox_metrics.envelopes_per_second = eps;
+        if (inbox_metrics.smoothing_factor == 0.0) {
+            inbox_metrics.smoothing_factor = 0.1;
+        }
+
+        if (inbox_metrics.rolling_average_eps == 0.0) {
+            inbox_metrics.rolling_average_eps = eps;
+        } else {
+            inbox_metrics.rolling_average_eps = inbox_metrics.smoothing_factor * eps +
+                (1.0 - inbox_metrics.smoothing_factor) * inbox_metrics.rolling_average_eps;
+        }
+
         inbox_metrics.refresh_time = inbox_metrics.time;
         inbox_metrics.envelope_counter = 0;
     }

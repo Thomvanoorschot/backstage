@@ -32,7 +32,8 @@ message InboxThroughputMetrics {
     required double time = 1 [default = 0.0];
     required float delta_time = 2 [default = 0.0];
     required int32 envelope_counter = 3 [default = 0];
-    required double envelopes_per_second = 4 [default = 0.0];
-    required double previous_time = 5 [default = 0.0];
-    required double refresh_time = 6 [default = 0.0];
+    required double previous_time = 4 [default = 0.0];
+    required double refresh_time = 5 [default = 0.0];
+    required double rolling_average_eps = 6 [default = 0.0];
+    required double smoothing_factor = 7 [default = 0.1];
 }
