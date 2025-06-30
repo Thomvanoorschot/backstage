@@ -44,7 +44,7 @@ zig build -Denable_inspector=true
 
 Upstream applications can use the inspector by enabling it like so
 
-```
+```zig
 const backstage_dep = b.dependency("backstage", .{
     .target = target,
     .optimize = optimize,
