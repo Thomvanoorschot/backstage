@@ -95,15 +95,64 @@ pub fn main() !void {
     }
 }
 
-fn renderFlatActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) void {
-    imgui.igText("Actors");
+fn setupActorTable() void {
+    imgui.igTableSetupColumn("ID", 0, 0, 0);
+    imgui.igTableSetupColumn("Name", 0, 0, 0);
+    imgui.igTableSetupColumn("eps", 0, 0, 0);
+    imgui.igTableSetupColumn("Inbox Length", 0, 0, 0);
+    imgui.igTableHeadersRow();
+}
 
-    if (imgui.igBeginTable("ActorsTable", 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
-        imgui.igTableSetupColumn("ID", 0, 0, 0);
-        imgui.igTableSetupColumn("Name", 0, 0, 0);
-        imgui.igTableSetupColumn("eps", 0, 0, 0);
-        imgui.igTableSetupColumn("Inbox Length", 0, 0, 0);
-        imgui.igTableHeadersRow();
+fn sortActors(actors: []inspst.ActorSnapshot, sort_by_eps: bool) void {
+    if (sort_by_eps) {
+        std.mem.sort(inspst.ActorSnapshot, actors, {}, compareByEps);
+    } else {
+        std.mem.sort(inspst.ActorSnapshot, actors, {}, compareById);
+    }
+}
+
+fn getActorEps(actor: inspst.ActorSnapshot) f64 {
+    return if (actor.inbox_metrics) |metrics|
+        if (metrics.throughput_metrics) |throughput|
+            throughput.rolling_average_eps
+        else
+            0.0
+    else
+        0.0;
+}
+
+fn getActorInboxLength(actor: inspst.ActorSnapshot) u64 {
+    return if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0)
+        @intCast(actor.inbox_metrics.?.len)
+    else
+        0;
+}
+
+fn renderActorTableRow(actor: inspst.ActorSnapshot, index: usize, display_name: []const u8) void {
+    imgui.igTableNextRow(0, 0);
+
+    _ = imgui.igTableSetColumnIndex(@intCast(0));
+    imgui.igText("%d", index + 1);
+
+    _ = imgui.igTableSetColumnIndex(@intCast(1));
+    imgui.igText("%s", display_name.ptr);
+
+    _ = imgui.igTableSetColumnIndex(@intCast(2));
+    const eps = getActorEps(actor);
+    if (eps == 0.0) {
+        imgui.igText("0,0");
+    } else {
+        imgui.igText("%.1f", eps);
+    }
+
+    _ = imgui.igTableSetColumnIndex(@intCast(3));
+    const inbox_length = getActorInboxLength(actor);
+    imgui.igText("%d", inbox_length);
+}
+
+fn renderActorTable(table_id: []const u8, actors: []inspst.ActorSnapshot, sort_by_eps: bool, get_display_name: fn (inspst.ActorSnapshot, usize) []const u8) void {
+    if (imgui.igBeginTable(table_id.ptr, 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
+        setupActorTable();
 
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
@@ -111,43 +160,24 @@ fn renderFlatActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) voi
 
         const sorted_actors = temp_allocator.alloc(inspst.ActorSnapshot, actors.len) catch return;
         @memcpy(sorted_actors, actors);
-
-        if (sort_by_eps) {
-            std.mem.sort(inspst.ActorSnapshot, sorted_actors, {}, compareByEps);
-        } else {
-            std.mem.sort(inspst.ActorSnapshot, sorted_actors, {}, compareById);
-        }
+        sortActors(sorted_actors, sort_by_eps);
 
         for (sorted_actors, 0..) |actor, i| {
-            imgui.igTableNextRow(0, 0);
-
-            _ = imgui.igTableSetColumnIndex(@intCast(0));
-            imgui.igText("%d", i + 1);
-
-            _ = imgui.igTableSetColumnIndex(@intCast(1));
-            imgui.igText("%s", actor.actor_type_name.Owned.str.ptr);
-
-            _ = imgui.igTableSetColumnIndex(@intCast(2));
-            const eps = if (actor.inbox_metrics) |metrics|
-                if (metrics.throughput_metrics) |throughput|
-                    throughput.rolling_average_eps
-                else
-                    0.0
-            else
-                0.0;
-            if (eps == 0.0) {
-                imgui.igText("0,0");
-            } else {
-                imgui.igText("%.1f", eps);
-            }
-
-            _ = imgui.igTableSetColumnIndex(@intCast(3));
-            const inbox_length = if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0) actor.inbox_metrics.?.len else 0;
-            imgui.igText("%d", inbox_length);
+            const display_name = get_display_name(actor, i);
+            renderActorTableRow(actor, i, display_name);
         }
 
         imgui.igEndTable();
     }
+}
+
+fn getFlatActorDisplayName(actor: inspst.ActorSnapshot, _: usize) []const u8 {
+    return actor.actor_type_name.Owned.str;
+}
+
+fn renderFlatActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) void {
+    imgui.igText("Actors");
+    renderActorTable("ActorsTable", @constCast(actors), sort_by_eps, getFlatActorDisplayName);
 }
 
 fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) void {
@@ -180,51 +210,29 @@ fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) 
         const group_name = entry.key_ptr.*;
         const group_actors = entry.value_ptr.*;
 
-        if (sort_by_eps) {
-            std.mem.sort(inspst.ActorSnapshot, group_actors.items, {}, compareByEps);
-        } else {
-            std.mem.sort(inspst.ActorSnapshot, group_actors.items, {}, compareById);
-        }
-
         if (imgui.igCollapsingHeader_TreeNodeFlags(group_name.ptr, imgui.ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (imgui.igBeginTable(group_name.ptr, 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
-                imgui.igTableSetupColumn("ID", 0, 0, 0);
-                imgui.igTableSetupColumn("Name", 0, 0, 0);
-                imgui.igTableSetupColumn("eps", 0, 0, 0);
-                imgui.igTableSetupColumn("Inbox Length", 0, 0, 0);
-                imgui.igTableHeadersRow();
-
-                for (group_actors.items, 0..) |actor, i| {
-                    imgui.igTableNextRow(0, 0);
-
-                    _ = imgui.igTableSetColumnIndex(@intCast(0));
-                    imgui.igText("%d", i + 1);
-
-                    _ = imgui.igTableSetColumnIndex(@intCast(1));
-                    imgui.igText("%s", group_name.ptr);
-
-                    _ = imgui.igTableSetColumnIndex(@intCast(2));
-                    const eps = if (actor.inbox_metrics) |metrics|
-                        if (metrics.throughput_metrics) |throughput|
-                            throughput.rolling_average_eps
-                        else
-                            0.0
-                    else
-                        0.0;
-                    if (eps == 0.0) {
-                        imgui.igText("0,0");
-                    } else {
-                        imgui.igText("%.1f", eps);
-                    }
-
-                    _ = imgui.igTableSetColumnIndex(@intCast(3));
-                    const inbox_length = if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0) actor.inbox_metrics.?.len else 0;
-                    imgui.igText("%d", inbox_length);
-                }
-
-                imgui.igEndTable();
-            }
+            renderActorTableWithGroupName(group_name, group_actors.items, sort_by_eps, group_name);
         }
+    }
+}
+
+fn renderActorTableWithGroupName(table_id: []const u8, actors: []inspst.ActorSnapshot, sort_by_eps: bool, group_name: []const u8) void {
+    if (imgui.igBeginTable(table_id.ptr, 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
+        setupActorTable();
+
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const temp_allocator = arena.allocator();
+
+        const sorted_actors = temp_allocator.alloc(inspst.ActorSnapshot, actors.len) catch return;
+        @memcpy(sorted_actors, actors);
+        sortActors(sorted_actors, sort_by_eps);
+
+        for (sorted_actors, 0..) |actor, i| {
+            renderActorTableRow(actor, i, group_name);
+        }
+
+        imgui.igEndTable();
     }
 }
 
