@@ -26,8 +26,8 @@ pub fn main() !void {
     defer reader.deinit();
 
     var e = try engine.Engine.init(.{
-        .width = 1024,
-        .height = 768,
+        .width = 1280,
+        .height = 960,
     });
     defer e.deinit();
 
@@ -57,6 +57,12 @@ pub fn main() !void {
 
         if (imgui.igBegin("Actor Inspector", null, 0)) {
             if (last_state) |data| {
+                if (data.inbox_throughput_metrics) |throughput_metrics| {
+                    imgui.igText("Messages per second: %.2f", throughput_metrics.rolling_average_eps);
+                } else {
+                    imgui.igText("Messages per second: 0.0");
+                }
+
                 _ = imgui.igCheckbox("Group by Type", &group_by_type);
 
                 imgui.igSameLine(0, 20);
@@ -128,14 +134,14 @@ fn getActorInboxLength(actor: inspst.ActorSnapshot) u64 {
         0;
 }
 
-fn renderActorTableRow(actor: inspst.ActorSnapshot, index: usize, display_name: []const u8) void {
+fn renderActorTableRow(actor: inspst.ActorSnapshot) void {
     imgui.igTableNextRow(0, 0);
 
     _ = imgui.igTableSetColumnIndex(@intCast(0));
-    imgui.igText("%d", index + 1);
+    imgui.igText("%s", actor.id.Owned.str.ptr);
 
     _ = imgui.igTableSetColumnIndex(@intCast(1));
-    imgui.igText("%s", display_name.ptr);
+    imgui.igText("%s", actor.actor_type_name.Owned.str.ptr);
 
     _ = imgui.igTableSetColumnIndex(@intCast(2));
     const eps = getActorEps(actor);
@@ -150,7 +156,7 @@ fn renderActorTableRow(actor: inspst.ActorSnapshot, index: usize, display_name: 
     imgui.igText("%d", inbox_length);
 }
 
-fn renderActorTable(table_id: []const u8, actors: []inspst.ActorSnapshot, sort_by_eps: bool, get_display_name: fn (inspst.ActorSnapshot, usize) []const u8) void {
+fn renderActorTable(table_id: []const u8, actors: []inspst.ActorSnapshot, sort_by_eps: bool) void {
     if (imgui.igBeginTable(table_id.ptr, 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
         setupActorTable();
 
@@ -162,9 +168,8 @@ fn renderActorTable(table_id: []const u8, actors: []inspst.ActorSnapshot, sort_b
         @memcpy(sorted_actors, actors);
         sortActors(sorted_actors, sort_by_eps);
 
-        for (sorted_actors, 0..) |actor, i| {
-            const display_name = get_display_name(actor, i);
-            renderActorTableRow(actor, i, display_name);
+        for (sorted_actors) |actor| {
+            renderActorTableRow(actor);
         }
 
         imgui.igEndTable();
@@ -177,7 +182,7 @@ fn getFlatActorDisplayName(actor: inspst.ActorSnapshot, _: usize) []const u8 {
 
 fn renderFlatActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) void {
     imgui.igText("Actors");
-    renderActorTable("ActorsTable", @constCast(actors), sort_by_eps, getFlatActorDisplayName);
+    renderActorTable("ActorsTable", @constCast(actors), sort_by_eps);
 }
 
 fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) void {
@@ -211,12 +216,12 @@ fn renderGroupedActors(actors: []const inspst.ActorSnapshot, sort_by_eps: bool) 
         const group_actors = entry.value_ptr.*;
 
         if (imgui.igCollapsingHeader_TreeNodeFlags(group_name.ptr, imgui.ImGuiTreeNodeFlags_DefaultOpen)) {
-            renderActorTableWithGroupName(group_name, group_actors.items, sort_by_eps, group_name);
+            renderActorTableWithGroupName(group_name, group_actors.items, sort_by_eps);
         }
     }
 }
 
-fn renderActorTableWithGroupName(table_id: []const u8, actors: []inspst.ActorSnapshot, sort_by_eps: bool, group_name: []const u8) void {
+fn renderActorTableWithGroupName(table_id: []const u8, actors: []inspst.ActorSnapshot, sort_by_eps: bool) void {
     if (imgui.igBeginTable(table_id.ptr, 4, imgui.ImGuiTableFlags_Borders | imgui.ImGuiTableFlags_RowBg, .{ .x = 0, .y = 0 }, 0.0)) {
         setupActorTable();
 
@@ -228,8 +233,8 @@ fn renderActorTableWithGroupName(table_id: []const u8, actors: []inspst.ActorSna
         @memcpy(sorted_actors, actors);
         sortActors(sorted_actors, sort_by_eps);
 
-        for (sorted_actors, 0..) |actor, i| {
-            renderActorTableRow(actor, i, group_name);
+        for (sorted_actors) |actor| {
+            renderActorTableRow(actor);
         }
 
         imgui.igEndTable();

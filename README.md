@@ -241,7 +241,6 @@ This is an early-stage implementation, focusing on core actor framework concepts
 - **Supervision tree**: Adding the ability to create a supervision tree with strategies
 - **Inbox back pressure**: Making the send be blocking as long as the receiver inbox is full
 - **Dead letter queue**: Undeliverable messages should end up in the DeadLetter queue
-- **Inspector**: A way for the user to inspect the current state of the actor system
 
 ## License
 
