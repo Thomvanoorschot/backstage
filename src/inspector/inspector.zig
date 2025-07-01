@@ -1,9 +1,9 @@
 const std = @import("std");
-const envlp = @import("envelope.zig");
-const actr = @import("actor.zig");
+const envlp = @import("../envelope.zig");
+const actr = @import("../actor.zig");
 const inspst = @import("inspector_state.pb.zig");
 const pb = @import("protobuf");
-const buffers = @import("inspector_buffers.zig");
+const buffers = @import("buffers.zig");
 
 const ActorInterface = actr.ActorInterface;
 const Envelope = envlp.Envelope;
@@ -47,10 +47,7 @@ pub const Inspector = struct {
     }
 
     pub fn actorSpawned(self: *Inspector, actor: *ActorInterface) !void {
-        try self.state.actors.append(ActorSnapshot{
-            .id = try ManagedString.copy(actor.ctx.actor_id, self.allocator),
-            .actor_type_name = try ManagedString.copy(actor.actor_type_name, self.allocator)
-        });
+        try self.state.actors.append(ActorSnapshot{ .id = try ManagedString.copy(actor.ctx.actor_id, self.allocator), .actor_type_name = try ManagedString.copy(actor.actor_type_name, self.allocator) });
         try self.tick();
     }
 

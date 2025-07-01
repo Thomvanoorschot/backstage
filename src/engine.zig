@@ -6,7 +6,7 @@ const xev = @import("xev");
 const envlp = @import("envelope.zig");
 const type_utils = @import("type_utils.zig");
 const build_options = @import("build_options");
-const ispct = @import("inspector.zig");
+const ispct = @import("inspector/inspector.zig");
 
 // This import will always workg© for ZLS
 const zignite = if (build_options.enable_inspector) @import("zignite") else {};

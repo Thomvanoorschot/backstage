@@ -5,7 +5,7 @@ const ctxt = @import("context.zig");
 const envlp = @import("envelope.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
-const ispct = @import("inspector.zig");
+const ispct = @import("inspector/inspector.zig");
 
 const Allocator = std.mem.Allocator;
 const Inbox = inbox.Inbox;

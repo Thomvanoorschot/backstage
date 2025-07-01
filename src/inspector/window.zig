@@ -1,7 +1,7 @@
 const std = @import("std");
 const zignite = @import("zignite");
 const inspst = @import("inspector_state.pb.zig");
-const buffers = @import("inspector_buffers.zig");
+const buffers = @import("buffers.zig");
 
 const imgui = zignite.imgui;
 const engine = zignite.engine;
@@ -103,7 +103,7 @@ pub fn main() !void {
 
 fn setupActorTable() void {
     imgui.igTableSetupColumn("ID", 0, 0, 0);
-    imgui.igTableSetupColumn("Name", 0, 0, 0);
+    imgui.igTableSetupColumn("Type", 0, 0, 0);
     imgui.igTableSetupColumn("eps", 0, 0, 0);
     imgui.igTableSetupColumn("Inbox Length", 0, 0, 0);
     imgui.igTableHeadersRow();

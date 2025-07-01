@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
             const gen_proto = b.step("gen-proto", "generates zig files from protocol buffer definitions");
             const protobuf = @import("protobuf");
             const protoc_step = protobuf.RunProtocStep.create(b, protobuf_dep.builder, target, .{
-                .destination_directory = b.path("src"),
+                .destination_directory = b.path("src/inspector"),
                 .source_files = &.{
                     "proto/inspector_state.proto",
                 },
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
 
             const inspector_exe = b.addExecutable(.{
                 .name = "inspector",
-                .root_source_file = b.path("src/inspector_exe.zig"),
+                .root_source_file = b.path("src/inspector/window.zig"),
                 .target = target,
                 .optimize = optimize,
             });
