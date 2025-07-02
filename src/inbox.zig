@@ -56,10 +56,7 @@ pub const Inbox = struct {
         var len_header: [@sizeOf(usize)]u8 = undefined;
         std.mem.writeInt(usize, &len_header, msg_len, .little);
 
-        // Write header
         self.writeToBuffer(&len_header);
-
-        // Write message data
         self.writeToBuffer(envelope_bytes);
 
         self.len += total_needed;
@@ -74,36 +71,21 @@ pub const Inbox = struct {
         const header_size = @sizeOf(usize);
 
         var len_bytes: [@sizeOf(usize)]u8 = undefined;
-        if (self.head + header_size <= self.capacity) {
-            // No wraparound
-            @memcpy(&len_bytes, self.buffer[self.head .. self.head + header_size]);
-        } else {
-            for (&len_bytes, 0..) |*b, i| {
-                b.* = self.buffer[(self.head + i) & (self.capacity - 1)];
-            }
-        }
-
+        self.readFromBuffer(&len_bytes);
         const msg_len = std.mem.readInt(usize, &len_bytes, .little);
-        const data_start = (self.head + header_size) & (self.capacity - 1);
 
-        const envelope = if (data_start + msg_len <= self.capacity) blk: {
-            // No wraparound
-            break :blk try Envelope.fromBytes(self.allocator, self.buffer[data_start .. data_start + msg_len]);
+        const envelope = if (self.head + msg_len <= self.capacity) blk: {
+            // No wraparound 
+            const slice = self.buffer[self.head .. self.head + msg_len];
+            self.head += msg_len;
+            break :blk try Envelope.fromBytes(self.allocator, slice);
         } else blk: {
-            std.log.info("wraparound", .{});
             const temp_buf = try self.allocator.alloc(u8, msg_len);
             defer self.allocator.free(temp_buf);
-
-            const first_chunk_size = self.capacity - data_start;
-            const second_chunk_size = msg_len - first_chunk_size;
-
-            @memcpy(temp_buf[0..first_chunk_size], self.buffer[data_start..self.capacity]);
-            @memcpy(temp_buf[first_chunk_size..], self.buffer[0..second_chunk_size]);
-
+            self.readFromBuffer(temp_buf);
             break :blk try Envelope.fromBytes(self.allocator, temp_buf);
         };
 
-        self.head = (self.head + header_size + msg_len) & (self.capacity - 1);
         self.len -= (header_size + msg_len);
         self.envelope_count -= 1;
 
@@ -116,25 +98,27 @@ pub const Inbox = struct {
         }
 
         const header_size = @sizeOf(usize);
+        const saved_head = self.head;
 
         var len_bytes: [@sizeOf(usize)]u8 = undefined;
-        var temp_head = self.head;
-        for (&len_bytes) |*b| {
-            b.* = self.buffer[temp_head];
-            temp_head = (temp_head + 1) & (self.capacity - 1);
-        }
-
+        self.readFromBuffer(&len_bytes);
         const msg_len = std.mem.readInt(usize, &len_bytes, .little);
         const total_size = header_size + msg_len;
 
-        const data_start = (self.head + header_size) & (self.capacity - 1);
-
-        if (data_start + msg_len <= self.capacity) {
+        const envelope = if (self.head + msg_len <= self.capacity) blk: {
             // No wraparound
-            const envelope = try Envelope.fromBytes(self.allocator, self.buffer[data_start .. data_start + msg_len]);
-            return .{ .envelope = envelope, .size = total_size };
-        }
-        return .{ .envelope = (try self.dequeue()).?, .size = total_size };
+            const slice = self.buffer[self.head .. self.head + msg_len];
+            break :blk try Envelope.fromBytes(self.allocator, slice);
+        } else blk: {
+            const temp_buf = try self.allocator.alloc(u8, msg_len);
+            defer self.allocator.free(temp_buf);
+            self.readFromBuffer(temp_buf);
+            break :blk try Envelope.fromBytes(self.allocator, temp_buf);
+        };
+
+        self.head = saved_head;
+
+        return .{ .envelope = envelope, .size = total_size };
     }
 
     pub fn consumeEnvelope(self: *Inbox, size: usize) void {
@@ -185,5 +169,40 @@ pub const Inbox = struct {
         @memcpy(self.buffer[self.tail..self.capacity], data[0..first_chunk]);
         @memcpy(self.buffer[0..second_chunk], data[first_chunk..]);
         self.tail = second_chunk;
+    }
+
+    fn readFromBuffer(self: *Inbox, data: []u8) void {
+        if (self.head + data.len <= self.capacity) {
+            // No wraparound
+            @memcpy(data, self.buffer[self.head .. self.head + data.len]);
+            self.head += data.len;
+            return;
+        }
+        const first_chunk = self.capacity - self.head;
+        const second_chunk = data.len - first_chunk;
+
+        @memcpy(data[0..first_chunk], self.buffer[self.head..self.capacity]);
+        @memcpy(data[first_chunk..], self.buffer[0..second_chunk]);
+        self.head = second_chunk;
+    }
+
+    fn peekFromBuffer(self: *const Inbox, start_offset: usize, data: []u8) void {
+        const read_pos = (self.head + start_offset) & (self.capacity - 1);
+
+        if (read_pos + data.len <= self.capacity) {
+            // No wraparound
+            @memcpy(data, self.buffer[read_pos .. read_pos + data.len]);
+            return;
+        }
+        const first_chunk = self.capacity - read_pos;
+        const second_chunk = data.len - first_chunk;
+
+        @memcpy(data[0..first_chunk], self.buffer[read_pos..self.capacity]);
+        @memcpy(data[first_chunk..], self.buffer[0..second_chunk]);
+    }
+
+    fn canReadDirectly(self: *const Inbox, start_offset: usize, len: usize) bool {
+        const read_pos = (self.head + start_offset) & (self.capacity - 1);
+        return read_pos + len <= self.capacity;
     }
 };
