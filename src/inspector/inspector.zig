@@ -76,7 +76,7 @@ pub const Inspector = struct {
                     break :blk metrics.throughput_metrics.?;
                 });
 
-                metrics.len = @intCast(actor.inbox.len);
+                metrics.envelope_count = @intCast(actor.inbox.envelope_count);
                 metrics.capacity = @intCast(actor.inbox.capacity);
                 metrics.last_message_at = std.time.milliTimestamp();
                 try updateInboxThroughputMetrics(throughput, @floatFromInt(std.time.milliTimestamp()));

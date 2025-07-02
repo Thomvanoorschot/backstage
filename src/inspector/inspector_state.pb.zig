@@ -36,13 +36,13 @@ pub const ActorSnapshot = struct {
 };
 
 pub const InboxMetrics = struct {
-    len: i64 = 0,
+    envelope_count: i64 = 0,
     capacity: i64 = 0,
     last_message_at: i64 = 0,
     throughput_metrics: ?InboxThroughputMetrics = null,
 
     pub const _desc_table = .{
-        .len = fd(1, .{ .Varint = .Simple }),
+        .envelope_count = fd(1, .{ .Varint = .Simple }),
         .capacity = fd(2, .{ .Varint = .Simple }),
         .last_message_at = fd(3, .{ .Varint = .Simple }),
         .throughput_metrics = fd(4, .{ .SubMessage = {} }),

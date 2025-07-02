@@ -10,6 +10,7 @@ pub const Inbox = struct {
     head: usize,
     tail: usize,
     len: usize,
+    envelope_count: usize,
 
     pub fn init(allocator: std.mem.Allocator, initial_capacity: usize) !*Inbox {
         var cap = @max(1, initial_capacity);
@@ -26,6 +27,7 @@ pub const Inbox = struct {
             .head = 0,
             .tail = 0,
             .len = 0,
+            .envelope_count = 0,
         };
         return inbox;
     }
@@ -64,6 +66,7 @@ pub const Inbox = struct {
             self.tail = (self.tail + 1) & (self.capacity - 1);
         }
         self.len += total_needed;
+        self.envelope_count += 1;
     }
 
     pub fn dequeue(self: *Inbox) !?Envelope {
@@ -90,6 +93,7 @@ pub const Inbox = struct {
         }
 
         self.len -= (header_size + msg_len);
+        self.envelope_count -= 1;
         return try Envelope.fromBytes(self.allocator, msg_buf);
     }
 

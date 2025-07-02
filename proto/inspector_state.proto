@@ -23,7 +23,7 @@ message ActorSnapshot {
 // }
 
 message InboxMetrics {
-    required int64 len = 1 [default = 0];
+    required int64 envelope_count = 1 [default = 0];
     required int64 capacity = 2 [default = 0];
     required int64 last_message_at = 3 [default = 0];
     required InboxThroughputMetrics throughput_metrics = 4;

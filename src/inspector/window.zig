@@ -128,8 +128,8 @@ fn getActorEps(actor: inspst.ActorSnapshot) f64 {
 }
 
 fn getActorInboxLength(actor: inspst.ActorSnapshot) u64 {
-    return if (actor.inbox_metrics != null and actor.inbox_metrics.?.len > 0)
-        @intCast(actor.inbox_metrics.?.len)
+    return if (actor.inbox_metrics != null and actor.inbox_metrics.?.envelope_count > 0)
+        @intCast(actor.inbox_metrics.?.envelope_count)
     else
         0;
 }
