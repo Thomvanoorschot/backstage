@@ -7,8 +7,6 @@ const envlp = @import("envelope.zig");
 const type_utils = @import("type_utils.zig");
 const build_options = @import("build_options");
 const ispct = @import("inspector/inspector.zig");
-
-// This import will always workg© for ZLS
 const zignite = if (build_options.enable_inspector) @import("zignite") else {};
 
 const Allocator = std.mem.Allocator;
@@ -189,6 +187,7 @@ pub const Engine = struct {
                 defer envelope.deinit(self.allocator);
                 try a.inbox.enqueue(try envelope.toBytes(self.allocator));
             }
+            try a.notifyMessageHandler();
         } else {
             std.log.warn("Actor not found: {s}", .{target_id});
         }

@@ -25,11 +25,17 @@ pub const ActorInterface = struct {
     inbox: *Inbox,
     ctx: *Context,
     completion: xev.Completion = undefined,
+
+    handle_message_h: xev.Async,
+    handle_message_c: xev.Completion = .{},
+
     arena_state: std.heap.ArenaAllocator,
     is_shutting_down: bool = false,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
+    receiveFnPtr: *const fn (ptr: *anyopaque, envelope: Envelope) anyerror!void,
     actor_type_name: []const u8,
+    is_processing: bool = false,
 
     const Self = @This();
 
@@ -41,10 +47,13 @@ pub const ActorInterface = struct {
         inspector: ?*Inspector,
     ) !*Self {
         const self = try allocator.create(Self);
+        var wakeup_h = try xev.Async.init();
+        errdefer wakeup_h.deinit();
         self.* = .{
             .allocator = allocator,
             .arena_state = std.heap.ArenaAllocator.init(allocator),
             .deinitFnPtr = makeTypeErasedDeinitFn(ActorType),
+            .receiveFnPtr = makeTypeErasedReceiveFn(ActorType),
             .inbox = undefined,
             .ctx = undefined,
             .impl = undefined,
@@ -57,6 +66,7 @@ pub const ActorInterface = struct {
                     break :blk full_name;
                 }
             },
+            .handle_message_h = wakeup_h,
         };
         errdefer self.arena_state.deinit();
         const ctx = try Context.init(
@@ -69,76 +79,72 @@ pub const ActorInterface = struct {
         self.impl = try ActorType.init(ctx, self.arena_state.allocator());
         self.inbox = try Inbox.init(self.allocator, options.capacity);
 
-        try self.listenForMessages(ActorType);
+        self.handle_message_h.wait(
+            &self.ctx.engine.loop,
+            &self.handle_message_c,
+            Self,
+            self,
+            handleMessage,
+        );
 
         return self;
     }
-    fn listenForMessages(self: *Self, comptime ActorType: type) !void {
-        const listenForMessagesFn = struct {
-            fn inner(
-                ud: ?*anyopaque,
-                _: *xev.Loop,
-                _: *xev.Completion,
-                _: xev.Result,
-            ) xev.CallbackAction {
-                const actor_interface: *Self = unsafeAnyOpaqueCast(Self, ud);
 
-                const maybe_envelope = actor_interface.inbox.dequeue() catch |err| {
-                    std.log.err("Tried to dequeue from inbox but failed: {s}", .{@errorName(err)});
-                    return .disarm;
+    pub fn notifyMessageHandler(self: *Self) !void {
+        // TODO I don't like this all too much, come up with a better solution
+        if (self.is_processing) {
+            return;
+        }
+        try self.handle_message_h.notify();
+    }
+
+    fn handleMessage(
+        self_: ?*Self,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        r: xev.Async.WaitError!void,
+    ) xev.CallbackAction {
+        _ = r catch |err| {
+            std.log.err("error in wakeup err={}", .{err});
+            return .rearm;
+        };
+
+        const self = self_.?;
+        self.is_processing = true;
+        defer self.is_processing = false;
+
+        // Process all available messages in a loop
+        while (self.inbox.dequeue() catch null) |envelope| {
+            if (self.inspector) |inspector| {
+                inspector.envelopeReceived(self, envelope) catch |err| {
+                    std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
                 };
-
-                if (maybe_envelope) |envelope| {
-                    if (actor_interface.inspector) |inspector| {
-                        inspector.envelopeReceived(actor_interface, envelope) catch |err| {
-                            std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
-                        };
-                    }
-                    const actor_impl = @as(*ActorType, @ptrCast(@alignCast(actor_interface.impl)));
-
-                    switch (envelope.message_type) {
-                        .send => {
-                            actor_impl.receive(envelope) catch |err| {
-                                std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
-                            };
-                        },
-                        .subscribe => {
-                            actor_interface.addSubscriber(envelope) catch |err| {
-                                std.log.err("Tried to put topic subscription but failed: {s}", .{@errorName(err)});
-                            };
-                        },
-                        .unsubscribe => {
-                            actor_interface.removeSubscriber(envelope) catch |err| {
-                                std.log.err("Tried to remove topic subscription but failed: {s}", .{@errorName(err)});
-                            };
-                        },
-                        .publish => {
-                            actor_impl.receive(envelope) catch |err| {
-                                std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
-                            };
-                        },
-                    }
-                }
-                return .disarm;
             }
-        }.inner;
-        const repeatFn = struct {
-            fn inner(
-                ud: ?*anyopaque,
-                loop: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
-                const inner_self: *Self = unsafeAnyOpaqueCast(Self, ud);
-                if (inner_self.is_shutting_down) {
-                    return .disarm;
-                }
-                _ = listenForMessagesFn(ud, loop, c, r);
-                loop.timer(c, 0, ud, inner);
-                return .disarm;
+
+            switch (envelope.message_type) {
+                .send => {
+                    self.receiveFnPtr(self.impl, envelope) catch |err| {
+                        std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
+                    };
+                },
+                .publish => {
+                    self.receiveFnPtr(self.impl, envelope) catch |err| {
+                        std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
+                    };
+                },
+                .subscribe => {
+                    self.addSubscriber(envelope) catch |err| {
+                        std.log.err("Tried to put topic subscription but failed: {s}", .{@errorName(err)});
+                    };
+                },
+                .unsubscribe => {
+                    self.removeSubscriber(envelope) catch |err| {
+                        std.log.err("Tried to remove topic subscription but failed: {s}", .{@errorName(err)});
+                    };
+                },
             }
-        }.inner;
-        self.ctx.engine.loop.timer(&self.completion, 0, @ptrCast(self), repeatFn);
+        }
+        return .rearm;
     }
 
     pub fn cleanupFrameworkResources(self: *Self) void {
@@ -253,4 +259,13 @@ fn hasDeinitMethod(comptime T: type) bool {
     }
 
     return false;
+}
+
+fn makeTypeErasedReceiveFn(comptime ActorType: type) fn (*anyopaque, Envelope) anyerror!void {
+    return struct {
+        fn wrapper(ptr: *anyopaque, envelope: Envelope) anyerror!void {
+            const self = @as(*ActorType, @ptrCast(@alignCast(ptr)));
+            try self.receive(envelope);
+        }
+    }.wrapper;
 }
