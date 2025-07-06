@@ -13,8 +13,15 @@ message ActorSnapshot {
     required string id = 1;
     required string actor_type_name = 2;
     optional InboxMetrics inbox_metrics = 3;
+    optional ActorMessage last_message = 4;
 }
 
+message ActorMessage {
+    optional string sender_id = 1;
+    required string message_type = 2;
+    required string receiver_id = 3;
+    required int64 received_at = 4;
+}
 // message InboxMetrics {
 //     required int64 len = 1 [default = 0];
 //     required int64 capacity = 2 [default = 0];

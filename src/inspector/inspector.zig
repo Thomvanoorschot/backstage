@@ -14,6 +14,7 @@ const ManagedString = pb.ManagedString;
 const InboxMetrics = inspst.InboxMetrics;
 const InboxThroughputMetrics = inspst.InboxThroughputMetrics;
 const SharedBufferWriter = buffers.SharedBufferWriter;
+const ActorMessage = inspst.ActorMessage;
 
 pub const Inspector = struct {
     allocator: std.mem.Allocator,
@@ -47,7 +48,10 @@ pub const Inspector = struct {
     }
 
     pub fn actorSpawned(self: *Inspector, actor: *ActorInterface) !void {
-        try self.state.actors.append(ActorSnapshot{ .id = try ManagedString.copy(actor.ctx.actor_id, self.allocator), .actor_type_name = try ManagedString.copy(actor.actor_type_name, self.allocator) });
+        try self.state.actors.append(ActorSnapshot{
+            .id = try ManagedString.copy(actor.ctx.actor_id, self.allocator),
+            .actor_type_name = try ManagedString.copy(actor.actor_type_name, self.allocator),
+        });
         try self.tick();
     }
 
@@ -67,6 +71,21 @@ pub const Inspector = struct {
 
         for (self.state.actors.items) |*actor_snapshot| {
             if (std.mem.eql(u8, actor_snapshot.id.Owned.str, actor.ctx.actor_id)) {
+                // actor_snapshot.last_message = ActorMessage{
+                //     .sender_id = ManagedString.static("test"),
+                //     .message_type = ManagedString.static("test"),
+                //     .receiver_id = ManagedString.static("test"),
+                //     .received_at = std.time.milliTimestamp(),
+                //     // .sender_id = if (envelope.sender_id) |id| try ManagedString.copy(id, self.allocator) else null,
+                //     // .message_type = switch (envelope.message_type) {
+                //     //     .send => try ManagedString.copy("send", self.allocator),
+                //     //     .publish => try ManagedString.copy("publish", self.allocator),
+                //     //     .subscribe => try ManagedString.copy("subscribe", self.allocator),
+                //     //     .unsubscribe => try ManagedString.copy("unsubscribe", self.allocator),
+                //     // },
+                //     // .receiver_id = try ManagedString.copy(actor.ctx.actor_id, self.allocator),
+                //     // .received_at = std.time.milliTimestamp(),
+                // };
                 const metrics = &(actor_snapshot.inbox_metrics orelse blk: {
                     actor_snapshot.inbox_metrics = .{};
                     break :blk actor_snapshot.inbox_metrics.?;

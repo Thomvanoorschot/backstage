@@ -25,11 +25,29 @@ pub const ActorSnapshot = struct {
     id: ManagedString,
     actor_type_name: ManagedString,
     inbox_metrics: ?InboxMetrics = null,
+    last_message: ?ActorMessage = null,
 
     pub const _desc_table = .{
         .id = fd(1, .String),
         .actor_type_name = fd(2, .String),
         .inbox_metrics = fd(3, .{ .SubMessage = {} }),
+        .last_message = fd(4, .{ .SubMessage = {} }),
+    };
+
+    pub usingnamespace protobuf.MessageMixins(@This());
+};
+
+pub const ActorMessage = struct {
+    sender_id: ?ManagedString = null,
+    message_type: ManagedString,
+    receiver_id: ManagedString,
+    received_at: i64,
+
+    pub const _desc_table = .{
+        .sender_id = fd(1, .String),
+        .message_type = fd(2, .String),
+        .receiver_id = fd(3, .String),
+        .received_at = fd(4, .{ .Varint = .Simple }),
     };
 
     pub usingnamespace protobuf.MessageMixins(@This());
