@@ -25,17 +25,14 @@ pub const ActorInterface = struct {
     inbox: *Inbox,
     ctx: *Context,
     completion: xev.Completion = undefined,
-
-    handle_message_h: xev.Async,
-    handle_message_c: xev.Completion = .{},
-
+    wakeup: xev.Async,
+    wakeup_completion: xev.Completion = undefined,
     arena_state: std.heap.ArenaAllocator,
     is_shutting_down: bool = false,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
     receiveFnPtr: *const fn (ptr: *anyopaque, envelope: Envelope) anyerror!void,
     actor_type_name: []const u8,
-    is_processing: bool = false,
 
     const Self = @This();
 
@@ -66,7 +63,7 @@ pub const ActorInterface = struct {
                     break :blk full_name;
                 }
             },
-            .handle_message_h = wakeup_h,
+            .wakeup = wakeup_h,
         };
         errdefer self.arena_state.deinit();
         const ctx = try Context.init(
@@ -79,23 +76,20 @@ pub const ActorInterface = struct {
         self.impl = try ActorType.init(ctx, self.arena_state.allocator());
         self.inbox = try Inbox.init(self.allocator, options.capacity);
 
-        self.handle_message_h.wait(
+        self.wakeup.wait(
             &self.ctx.engine.loop,
-            &self.handle_message_c,
+            &self.wakeup_completion,
             Self,
             self,
             handleMessage,
         );
+        try self.wakeup.notify();
 
         return self;
     }
 
     pub fn notifyMessageHandler(self: *Self) !void {
-        // TODO I don't like this all too much, come up with a better solution
-        if (self.is_processing) {
-            return;
-        }
-        try self.handle_message_h.notify();
+        try self.wakeup.notify();
     }
 
     fn handleMessage(
@@ -110,8 +104,6 @@ pub const ActorInterface = struct {
         };
 
         const self = self_.?;
-        self.is_processing = true;
-        defer self.is_processing = false;
 
         // Process all available messages in a loop
         while (self.inbox.dequeue() catch null) |envelope| {
@@ -176,6 +168,8 @@ pub const ActorInterface = struct {
                 }
             }).callback,
         };
+        self.wakeup.deinit();
+
         self.ctx.engine.loop.add(&cancel_completion);
     }
 
