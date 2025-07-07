@@ -3,7 +3,6 @@ const zignite = @import("zignite");
 const inspst = @import("inspector_state.pb.zig");
 const buffers = @import("buffers.zig");
 const actor_window = @import("actor_window.zig");
-const message_window = @import("message_window.zig");
 
 const imgui = zignite.imgui;
 const engine = zignite.engine;
