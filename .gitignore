@@ -20,3 +20,5 @@ zig-out/
 .DS_Store
 Thumbs.db 
 backstage.tar.gz
+
+.cursor/
