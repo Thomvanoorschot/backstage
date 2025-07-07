@@ -13,8 +13,13 @@
             .url = "https://github.com/mitchellh/libxev/archive/main.tar.gz",
             .hash = "libxev-0.0.0-86vtc87kEgBxgbJ1RI1R6Elynb7zydCgNR8dt3uw01My",
         },
+        // .zignite = .{
+        //     .path = "../zignite",
+        //     .lazy = true,
+        // },
         .zignite = .{
-            .path = "../zignite",
+            .url = "https://github.com/Thomvanoorschot/zignite/archive/main.tar.gz",
+            .hash = "zignite-0.0.1-Cr7tPcGFnQA2UNc9en6Y7IpAJyvECevcx8nPTTfstjTG",
             .lazy = true,
         },
         .protobuf = .{
