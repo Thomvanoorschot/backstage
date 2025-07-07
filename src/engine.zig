@@ -91,9 +91,11 @@ pub const Engine = struct {
         const actor = self.registry.fetchRemove(id);
         if (actor) |a| {
             a.cleanupFrameworkResources();
-            self.inspector.?.actorTerminated(a) catch |err| {
-                std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
-            };
+            if (self.inspector != null) {
+                self.inspector.?.actorTerminated(a) catch |err| {
+                    std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
+                };
+            }
         }
     }
 
@@ -163,7 +165,16 @@ pub const Engine = struct {
         if (actor) |a| {
             const T = @TypeOf(message);
             switch (@typeInfo(T)) {
-                .pointer => |ptr| if (ptr.child != u8) @compileError("Only []const u8 supported"),
+                .pointer => |ptr| {
+                    if (ptr.child != u8 and @typeInfo(ptr.child) != .array) {
+                        @compileError("Only []const u8 or string literals supported");
+                    }
+                    if (@typeInfo(ptr.child) == .array) {
+                        if (@typeInfo(ptr.child).array.child != u8) {
+                            @compileError("Only []const u8 or string literals supported");
+                        }
+                    }
+                },
                 .@"struct" => if (!comptime type_utils.hasMethod(T, "encode")) @compileError("Struct must have encode() method"),
                 else => @compileError("Message must be []const u8 or protobuf struct"),
             }

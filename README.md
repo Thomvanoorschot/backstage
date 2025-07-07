@@ -103,7 +103,7 @@ const MyActor = struct {
         return self;
     }
 
-    pub fn receive(self: *Self(), envelope: Envelope) !void {
+    pub fn receive(self: *Self, envelope: Envelope) !void {
         defer envelope.deinit(self.allocator);
         // This example shows zig-protobuf encoded payloads, any encoding (or none at all) would work
         const actor_msg: MyActorMessage = try MyActorMessage.decode(message.payload, self.allocator);
@@ -117,9 +117,7 @@ const MyActor = struct {
         }
     }
 
-    pub fn deinit(self: *Self) !void {
-        try self.ctx.shutdown();
-    }
+    pub fn deinit(self: *Self) !void {}
 };
 
 pub fn main() !void {

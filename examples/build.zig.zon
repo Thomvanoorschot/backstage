@@ -1,0 +1,15 @@
+.{
+    .name = .backstage_examples,
+    .fingerprint = 0x5f883a5439535da3,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.15.0-dev.483+837e0f9c3",
+    .dependencies = .{
+        .backstage = .{
+            .path = "..",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+}
