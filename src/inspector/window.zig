@@ -35,7 +35,6 @@ pub fn main() !void {
 
     var last_state: ?InspectorState = null;
     var actor_state = actor_window.ActorWindowState.init();
-    var message_state = message_window.MessageWindowState.init();
 
     while (e.startRender()) {
         defer e.endRender();
@@ -69,11 +68,6 @@ pub fn main() !void {
                 if (imgui.igBeginTabBar("InspectorTabs", 0)) {
                     if (imgui.igBeginTabItem("Actors", null, 0)) {
                         actor_window.render(data, &actor_state);
-                        imgui.igEndTabItem();
-                    }
-
-                    if (imgui.igBeginTabItem("Messages", null, 0)) {
-                        message_window.render(data, &message_state);
                         imgui.igEndTabItem();
                     }
 

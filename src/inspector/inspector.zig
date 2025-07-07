@@ -1,3 +1,7 @@
+// TODO
+// While this solution works, this is far from ideal.
+// The buffer solution is severly limited and the main process spends too much time 
+// storing the state to the buffer. Needs a complete overhaul.
 const std = @import("std");
 const envlp = @import("../envelope.zig");
 const actr = @import("../actor.zig");
