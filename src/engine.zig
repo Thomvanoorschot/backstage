@@ -59,6 +59,8 @@ pub const Engine = struct {
             entry.value_ptr.*.deinitFnPtr(entry.value_ptr.*.impl) catch |err| {
                 std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});
             };
+            entry.value_ptr.*.deinit();
+            self.allocator.destroy(entry.value_ptr.*);
         }
         self.registry.deinit();
     }
@@ -90,7 +92,7 @@ pub const Engine = struct {
     pub fn removeAndCleanupActor(self: *Self, id: []const u8) !void {
         const actor = self.registry.fetchRemove(id);
         if (actor) |a| {
-            a.cleanupFrameworkResources();
+            a.deinit();
             if (self.inspector != null) {
                 self.inspector.?.actorTerminated(a) catch |err| {
                     std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
@@ -187,16 +189,20 @@ pub const Engine = struct {
                     message_type,
                     encoded,
                 );
-                defer envelope.deinit(self.allocator);
-                try a.inbox.enqueue(try envelope.toBytes(self.allocator));
+                // defer envelope.deinit(self.allocator);
+                const envelope_bytes = try envelope.toBytes(self.allocator);
+                defer self.allocator.free(envelope_bytes);
+                try a.inbox.enqueue(envelope_bytes);
             } else {
                 const envelope = Envelope.init(
                     sender_id,
                     message_type,
                     message,
                 );
-                defer envelope.deinit(self.allocator);
-                try a.inbox.enqueue(try envelope.toBytes(self.allocator));
+                // defer envelope.deinit(self.allocator);
+                const envelope_bytes = try envelope.toBytes(self.allocator);
+                defer self.allocator.free(envelope_bytes);
+                try a.inbox.enqueue(envelope_bytes);
             }
             try a.notifyMessageHandler();
         } else {

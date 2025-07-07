@@ -24,7 +24,6 @@ pub const ActorInterface = struct {
     impl: *anyopaque,
     inbox: *Inbox,
     ctx: *Context,
-    completion: xev.Completion = undefined,
     wakeup: xev.Async,
     wakeup_completion: xev.Completion = undefined,
     arena_state: std.heap.ArenaAllocator,
@@ -44,37 +43,20 @@ pub const ActorInterface = struct {
         inspector: ?*Inspector,
     ) !*Self {
         const self = try allocator.create(Self);
-        var wakeup_h = try xev.Async.init();
-        errdefer wakeup_h.deinit();
         self.* = .{
             .allocator = allocator,
             .arena_state = std.heap.ArenaAllocator.init(allocator),
             .deinitFnPtr = makeTypeErasedDeinitFn(ActorType),
             .receiveFnPtr = makeTypeErasedReceiveFn(ActorType),
-            .inbox = undefined,
-            .ctx = undefined,
-            .impl = undefined,
+            .inbox = try Inbox.init(self.allocator, options.capacity),
+            .ctx = try Context.init(self.arena_state.allocator(), engine, self, options.id),
+            .impl = try ActorType.init(self.ctx, self.arena_state.allocator()),
             .inspector = inspector,
-            .actor_type_name = blk: {
-                const full_name = @typeName(ActorType);
-                if (std.mem.lastIndexOf(u8, full_name, ".")) |last_dot_index| {
-                    break :blk full_name[last_dot_index + 1 ..];
-                } else {
-                    break :blk full_name;
-                }
-            },
-            .wakeup = wakeup_h,
+            .actor_type_name = type_utils.getTypeName(ActorType),
+            .wakeup = try xev.Async.init(),
         };
         errdefer self.arena_state.deinit();
-        const ctx = try Context.init(
-            self.arena_state.allocator(),
-            engine,
-            self,
-            options.id,
-        );
-        self.ctx = ctx;
-        self.impl = try ActorType.init(ctx, self.arena_state.allocator());
-        self.inbox = try Inbox.init(self.allocator, options.capacity);
+        errdefer self.wakeup.deinit();
 
         self.wakeup.wait(
             &self.ctx.engine.loop,
@@ -105,8 +87,9 @@ pub const ActorInterface = struct {
 
         const self = self_.?;
 
-        // Process all available messages in a loop
         while (self.inbox.dequeue() catch null) |envelope| {
+            defer envelope.deinit(self.allocator);
+
             if (self.inspector) |inspector| {
                 inspector.envelopeReceived(self, envelope) catch |err| {
                     std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
@@ -114,12 +97,7 @@ pub const ActorInterface = struct {
             }
 
             switch (envelope.message_type) {
-                .send => {
-                    self.receiveFnPtr(self.impl, envelope) catch |err| {
-                        std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
-                    };
-                },
-                .publish => {
+                .send, .publish => {
                     self.receiveFnPtr(self.impl, envelope) catch |err| {
                         std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
                     };
@@ -139,42 +117,16 @@ pub const ActorInterface = struct {
         return .rearm;
     }
 
-    pub fn cleanupFrameworkResources(self: *Self) void {
+    pub fn deinit(self: *Self) void {
         self.is_shutting_down = true;
         self.inbox.deinit();
+        self.allocator.destroy(self.inbox);
+        self.ctx.allocator.destroy(self.ctx);
         self.arena_state.deinit();
-        if (self.completion.op == .noop) {
-            self.allocator.destroy(self);
-            return;
-        }
-        cancel_completion = .{
-            .op = .{
-                .cancel = .{
-                    .c = &self.completion,
-                },
-            },
-            .userdata = @ptrCast(self),
-            .callback = (struct {
-                fn callback(
-                    self_: ?*anyopaque,
-                    _: *xev.Loop,
-                    _: *xev.Completion,
-                    r: xev.Result,
-                ) xev.CallbackAction {
-                    _ = r.cancel catch unreachable;
-                    const inner_self: *Self = unsafeAnyOpaqueCast(Self, self_);
-                    inner_self.allocator.destroy(inner_self);
-                    return .disarm;
-                }
-            }).callback,
-        };
         self.wakeup.deinit();
-
-        self.ctx.engine.loop.add(&cancel_completion);
     }
 
     fn addSubscriber(self: *Self, envelope: Envelope) !void {
-        defer envelope.deinit(self.allocator);
         if (envelope.sender_id == null) {
             return error.SenderIdIsRequired;
         }
@@ -192,8 +144,6 @@ pub const ActorInterface = struct {
     }
 
     fn removeSubscriber(self: *Self, envelope: Envelope) !void {
-        defer envelope.deinit(self.allocator);
-
         var subscribers = self.ctx.topic_subscriptions.get(envelope.message);
         if (subscribers == null) {
             return error.TopicDoesNotExist;

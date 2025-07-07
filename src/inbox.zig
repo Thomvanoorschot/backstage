@@ -75,7 +75,7 @@ pub const Inbox = struct {
         const msg_len = std.mem.readInt(usize, &len_bytes, .little);
 
         const envelope = if (self.head + msg_len <= self.capacity) blk: {
-            // No wraparound 
+            // No wraparound
             const slice = self.buffer[self.head .. self.head + msg_len];
             self.head += msg_len;
             break :blk try Envelope.fromBytes(self.allocator, slice);
