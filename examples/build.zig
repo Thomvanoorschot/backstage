@@ -12,12 +12,16 @@ pub fn build(b: *Build) void {
     });
 
     const example_names = .{
-        "hello_world",
+        "hello_world_string",
+        "hello_world_struct",
+        "large_struct",
     };
+
+    const test_step = b.step("test", "Run all tests");
 
     inline for (example_names) |example_name| {
         const example = b.addTest(.{
-            .root_source_file = b.path(example_name ++ ".zig"),
+            .root_source_file = b.path("src/" ++ example_name ++ ".zig"),
             .target = target,
             .optimize = optimize,
             .name = example_name,
@@ -27,5 +31,7 @@ pub fn build(b: *Build) void {
 
         const run = b.addRunArtifact(example);
         b.step(example_name, "Run " ++ example_name).dependOn(&run.step);
+
+        test_step.dependOn(&run.step);
     }
 }

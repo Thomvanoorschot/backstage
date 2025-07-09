@@ -44,13 +44,18 @@ pub const Inbox = struct {
         return (self.capacity - self.len) < needed;
     }
 
-    pub fn enqueue(self: *Inbox, envelope_bytes: []const u8) !void {
+    pub fn enqueue(self: *Inbox, envelope: Envelope) !void {
+        const envelope_bytes = try envelope.toBytes(self.allocator);
+        defer self.allocator.free(envelope_bytes);
+
         const header_size = @sizeOf(usize);
         const msg_len = envelope_bytes.len;
         const total_needed = header_size + msg_len;
 
         if (self.isFull(total_needed)) {
-            try self.grow(self.capacity * 2);
+            const min_needed = self.len + total_needed;
+            const new_cap = try std.math.ceilPowerOfTwo(usize, min_needed);
+            try self.grow(new_cap);
         }
 
         var len_header: [@sizeOf(usize)]u8 = undefined;

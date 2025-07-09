@@ -6,7 +6,7 @@ const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
 
-const HelloWorldActor = struct {
+const TestActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
     hello_world_received: bool = false,
@@ -31,7 +31,18 @@ const HelloWorldActor = struct {
     pub fn deinit(_: *Self) !void {}
 };
 
+const HelloWorldStruct = struct {
+    message: []const u8,
+
+    const Self = @This();
+
+    pub fn encode(self: *const Self, allocator: std.mem.Allocator) ![]u8 {
+        return try allocator.dupe(u8, self.message);
+    }
+};
+
 test "Hello, World!" {
+    testing.log_level = .info;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -39,10 +50,13 @@ test "Hello, World!" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const hello_world_actor = try engine.spawnActor(HelloWorldActor, .{
-        .id = "hello_world_actor",
+    const hello_world_struct = HelloWorldStruct{
+        .message = "Hello, world!",
+    };
+    const test_actor = try engine.spawnActor(TestActor, .{
+        .id = "test_actor",
     });
-    try engine.send(null, "hello_world_actor", "Hello, world!");
+    try engine.send(null, "test_actor", hello_world_struct);
     try engine.loop.run(.once);
-    try testing.expect(hello_world_actor.hello_world_received);
+    try testing.expect(test_actor.hello_world_received);
 }

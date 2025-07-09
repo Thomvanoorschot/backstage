@@ -178,32 +178,18 @@ pub const Engine = struct {
                     }
                 },
                 .@"struct" => if (!comptime type_utils.hasMethod(T, "encode")) @compileError("Struct must have encode() method"),
-                else => @compileError("Message must be []const u8 or protobuf struct"),
+                else => @compileError("Message must be []const u8, a string literal or struct with an encode() method"),
             }
 
-            if (@typeInfo(T) == .@"struct") {
-                const encoded = try message.encode(self.allocator);
-                defer self.allocator.free(encoded);
-                const envelope = Envelope.init(
-                    sender_id,
-                    message_type,
-                    encoded,
-                );
-                // defer envelope.deinit(self.allocator);
-                const envelope_bytes = try envelope.toBytes(self.allocator);
-                defer self.allocator.free(envelope_bytes);
-                try a.inbox.enqueue(envelope_bytes);
-            } else {
-                const envelope = Envelope.init(
-                    sender_id,
-                    message_type,
-                    message,
-                );
-                // defer envelope.deinit(self.allocator);
-                const envelope_bytes = try envelope.toBytes(self.allocator);
-                defer self.allocator.free(envelope_bytes);
-                try a.inbox.enqueue(envelope_bytes);
-            }
+            const message_data = if (@typeInfo(T) == .@"struct") blk: {
+                break :blk try message.encode(self.allocator);
+            } else blk: {
+                break :blk message;
+            };
+            defer if (@typeInfo(T) == .@"struct") self.allocator.free(message_data);
+
+            const envelope = Envelope.init(sender_id, message_type, message_data);
+            try a.inbox.enqueue(envelope);
             try a.notifyMessageHandler();
         } else {
             std.log.warn("Actor not found: {s}", .{target_id});
