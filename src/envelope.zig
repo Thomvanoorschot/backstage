@@ -11,7 +11,6 @@ pub const Envelope = struct {
     sender_id: ?[]const u8,
     message_type: MessageType,
     message: []const u8,
-    message_buf: ?[]u8 = null,
 
     pub fn init(
         sender_id: ?[]const u8,
@@ -26,15 +25,16 @@ pub const Envelope = struct {
     }
 
     pub fn deinit(self: *const Envelope, allocator: std.mem.Allocator) void {
-        if (self.message_buf) |buf| {
-            allocator.free(buf);
+        if (self.sender_id) |id| {
+            allocator.free(id);
         }
+        allocator.free(self.message);
     }
 
     pub fn toBytes(self: *const Envelope, allocator: std.mem.Allocator) ![]u8 {
         const HeaderType = u32;
-        const len_field_size = @sizeOf(HeaderType); // 4
-        const id_len_size = @sizeOf(u16); // 2
+        const len_field_size = @sizeOf(HeaderType);
+        const id_len_size = @sizeOf(u16);
 
         const sender_id_len: usize = if (self.sender_id) |idSlice| idSlice.len else 0;
         const envelope_type_len: usize = @sizeOf(MessageType);
@@ -75,42 +75,41 @@ pub const Envelope = struct {
         allocator: std.mem.Allocator,
         frame_buf: []const u8,
     ) !Envelope {
-        const owned_frame_buf = try allocator.dupe(u8, frame_buf);
         const HeaderType = u32;
         const len_field_size = @sizeOf(HeaderType);
         const id_len_size = @sizeOf(u16);
 
-        if (owned_frame_buf.len < len_field_size + id_len_size) {
+        if (frame_buf.len < len_field_size + id_len_size) {
             return error.TruncatedFrame;
         }
 
-        const length_minus_4 = std.mem.readInt(HeaderType, @ptrCast(owned_frame_buf[0..len_field_size]), std.builtin.Endian.big);
-        if (length_minus_4 + len_field_size != owned_frame_buf.len) {
+        const length_minus_4 = std.mem.readInt(HeaderType, @ptrCast(frame_buf[0..len_field_size]), std.builtin.Endian.big);
+        if (length_minus_4 + len_field_size != frame_buf.len) {
             return error.InvalidLength;
         }
 
-        const raw_id_len = std.mem.readInt(u16, @ptrCast(owned_frame_buf[len_field_size .. len_field_size + id_len_size]), std.builtin.Endian.big);
+        const raw_id_len = std.mem.readInt(u16, @ptrCast(frame_buf[len_field_size .. len_field_size + id_len_size]), std.builtin.Endian.big);
         const sender_id_len = raw_id_len;
 
-        if (owned_frame_buf.len < len_field_size + id_len_size + sender_id_len) {
+        if (frame_buf.len < len_field_size + id_len_size + sender_id_len) {
             return error.TruncatedFrame;
         }
 
-        var sender_id_out: ?[]const u8 = null;
+        var sender_id: ?[]const u8 = null;
         if (sender_id_len > 0) {
-            sender_id_out = owned_frame_buf[(len_field_size + id_len_size)..(len_field_size + id_len_size + sender_id_len)];
+            const sender_id_slice = frame_buf[(len_field_size + id_len_size)..(len_field_size + id_len_size + sender_id_len)];
+            sender_id = try allocator.dupe(u8, sender_id_slice);
         }
 
-        const envelope_type_raw = std.mem.readInt(u8, @ptrCast(owned_frame_buf[len_field_size + id_len_size + sender_id_len .. len_field_size + id_len_size + sender_id_len + @sizeOf(MessageType)]), std.builtin.Endian.big);
+        const envelope_type_raw = std.mem.readInt(u8, @ptrCast(frame_buf[len_field_size + id_len_size + sender_id_len .. len_field_size + id_len_size + sender_id_len + @sizeOf(MessageType)]), std.builtin.Endian.big);
         const message_type: MessageType = @enumFromInt(envelope_type_raw);
         const payload_start = len_field_size + id_len_size + sender_id_len + @sizeOf(MessageType);
-        const payload_out = owned_frame_buf[payload_start..owned_frame_buf.len];
+        const payload_out = try allocator.dupe(u8, frame_buf[payload_start..frame_buf.len]);
 
         return Envelope{
-            .sender_id = sender_id_out,
+            .sender_id = sender_id,
             .message_type = message_type,
             .message = payload_out,
-            .message_buf = owned_frame_buf,
         };
     }
 };

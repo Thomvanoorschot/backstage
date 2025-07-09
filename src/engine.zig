@@ -59,6 +59,8 @@ pub const Engine = struct {
             entry.value_ptr.*.deinitFnPtr(entry.value_ptr.*.impl) catch |err| {
                 std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});
             };
+            entry.value_ptr.*.deinit();
+            self.allocator.destroy(entry.value_ptr.*);
         }
         self.registry.deinit();
     }
@@ -90,10 +92,12 @@ pub const Engine = struct {
     pub fn removeAndCleanupActor(self: *Self, id: []const u8) !void {
         const actor = self.registry.fetchRemove(id);
         if (actor) |a| {
-            a.cleanupFrameworkResources();
-            self.inspector.?.actorTerminated(a) catch |err| {
-                std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
-            };
+            a.deinit();
+            if (self.inspector != null) {
+                self.inspector.?.actorTerminated(a) catch |err| {
+                    std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
+                };
+            }
         }
     }
 
@@ -163,30 +167,29 @@ pub const Engine = struct {
         if (actor) |a| {
             const T = @TypeOf(message);
             switch (@typeInfo(T)) {
-                .pointer => |ptr| if (ptr.child != u8) @compileError("Only []const u8 supported"),
+                .pointer => |ptr| {
+                    if (ptr.child != u8 and @typeInfo(ptr.child) != .array) {
+                        @compileError("Only []const u8 or string literals supported");
+                    }
+                    if (@typeInfo(ptr.child) == .array) {
+                        if (@typeInfo(ptr.child).array.child != u8) {
+                            @compileError("Only []const u8 or string literals supported");
+                        }
+                    }
+                },
                 .@"struct" => if (!comptime type_utils.hasMethod(T, "encode")) @compileError("Struct must have encode() method"),
-                else => @compileError("Message must be []const u8 or protobuf struct"),
+                else => @compileError("Message must be []const u8, a string literal or struct with an encode() method"),
             }
 
-            if (@typeInfo(T) == .@"struct") {
-                const encoded = try message.encode(self.allocator);
-                defer self.allocator.free(encoded);
-                const envelope = Envelope.init(
-                    sender_id,
-                    message_type,
-                    encoded,
-                );
-                defer envelope.deinit(self.allocator);
-                try a.inbox.enqueue(try envelope.toBytes(self.allocator));
-            } else {
-                const envelope = Envelope.init(
-                    sender_id,
-                    message_type,
-                    message,
-                );
-                defer envelope.deinit(self.allocator);
-                try a.inbox.enqueue(try envelope.toBytes(self.allocator));
-            }
+            const message_data = if (@typeInfo(T) == .@"struct") blk: {
+                break :blk try message.encode(self.allocator);
+            } else blk: {
+                break :blk message;
+            };
+            defer if (@typeInfo(T) == .@"struct") self.allocator.free(message_data);
+
+            const envelope = Envelope.init(sender_id, message_type, message_data);
+            try a.inbox.enqueue(envelope);
             try a.notifyMessageHandler();
         } else {
             std.log.warn("Actor not found: {s}", .{target_id});
