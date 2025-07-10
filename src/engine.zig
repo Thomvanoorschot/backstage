@@ -90,17 +90,6 @@ pub const Engine = struct {
         }
         return unsafeAnyOpaqueCast(ActorType, actor_interface.impl);
     }
-    pub fn removeAndCleanupActor(self: *Self, id: []const u8) !void {
-        const actor = self.registry.fetchRemove(id);
-        if (actor) |a| {
-            a.deinit();
-            if (self.inspector != null) {
-                self.inspector.?.actorTerminated(a) catch |err| {
-                    std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
-                };
-            }
-        }
-    }
 
     pub fn send(
         self: *Self,

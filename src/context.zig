@@ -91,7 +91,7 @@ pub const Context = struct {
             _ = parent.*.ctx.detachChildActor(self.actor);
         }
 
-        try self.engine.removeAndCleanupActor(self.actor_id);
+        try engine_internal.removeActor(self.engine, self.actor_id);
     }
 
     pub fn send(self: *const Self, target_id: []const u8, message: anytype) !void {

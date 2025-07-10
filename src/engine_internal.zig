@@ -3,12 +3,12 @@ const engine = @import("engine.zig");
 const envlp = @import("envelope.zig");
 const type_utils = @import("type_utils.zig");
 
-const Self = engine.Engine;
+const Engine = engine.Engine;
 const Envelope = envlp.Envelope;
 const MessageType = envlp.MessageType;
 
 pub fn enqueueMessage(
-    self: *Self,
+    self: *Engine,
     sender_id: ?[]const u8,
     target_id: []const u8,
     message_type: MessageType,
@@ -44,5 +44,17 @@ pub fn enqueueMessage(
         try a.notifyMessageHandler();
     } else {
         std.log.warn("Actor not found: {s}", .{target_id});
+    }
+}
+
+pub fn removeActor(self: *Engine, id: []const u8) !void {
+    const actor = self.registry.fetchRemove(id);
+    if (actor) |a| {
+        a.deinit();
+        if (self.inspector != null) {
+            self.inspector.?.actorTerminated(a) catch |err| {
+                std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
+            };
+        }
     }
 }
