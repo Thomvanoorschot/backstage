@@ -56,7 +56,7 @@ test "Hello, World!" {
     const test_actor = try engine.spawnActor(TestActor, .{
         .id = "test_actor",
     });
-    try engine.send(null, "test_actor", hello_world_struct);
+    try engine.send("test_actor", hello_world_struct);
     try engine.loop.run(.once);
     try testing.expect(test_actor.hello_world_received);
 }

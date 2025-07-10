@@ -4,6 +4,7 @@ const act = @import("actor.zig");
 const eng = @import("engine.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
+const engine_internal = @import("engine_internal.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -94,9 +95,11 @@ pub const Context = struct {
     }
 
     pub fn send(self: *const Self, target_id: []const u8, message: anytype) !void {
-        try self.engine.send(
+        try engine_internal.enqueueMessage(
+            self.engine,
             self.actor_id,
             target_id,
+            .send,
             message,
         );
     }
@@ -109,9 +112,11 @@ pub const Context = struct {
         if (self.topic_subscriptions.get(topic)) |subscribers| {
             var it = subscribers.keyIterator();
             while (it.next()) |id| {
-                try self.engine.publish(
+                try engine_internal.enqueueMessage(
+                    self.engine,
                     self.actor_id,
                     id.*,
+                    .publish,
                     message,
                 );
             }

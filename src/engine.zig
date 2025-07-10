@@ -8,6 +8,7 @@ const type_utils = @import("type_utils.zig");
 const build_options = @import("build_options");
 const ispct = @import("inspector/inspector.zig");
 const zignite = if (build_options.enable_inspector) @import("zignite") else {};
+const internal = @import("engine_internal.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -103,12 +104,12 @@ pub const Engine = struct {
 
     pub fn send(
         self: *Self,
-        sender_id: ?[]const u8,
         target_id: []const u8,
         message: anytype,
     ) !void {
-        return self.enqueueMessage(
-            sender_id,
+        return internal.enqueueMessage(
+            self,
+            null,
             target_id,
             .send,
             message,
@@ -116,12 +117,12 @@ pub const Engine = struct {
     }
     pub fn publish(
         self: *Self,
-        sender_id: ?[]const u8,
         target_id: []const u8,
         message: anytype,
     ) !void {
-        return self.enqueueMessage(
-            sender_id,
+        return internal.enqueueMessage(
+            self,
+            null,
             target_id,
             .publish,
             message,
@@ -134,7 +135,8 @@ pub const Engine = struct {
         target_id: []const u8,
         topic: []const u8,
     ) !void {
-        return self.enqueueMessage(
+        return internal.enqueueMessage(
+            self,
             sender_id,
             target_id,
             .subscribe,
@@ -148,51 +150,12 @@ pub const Engine = struct {
         target_id: []const u8,
         topic: []const u8,
     ) !void {
-        return self.enqueueMessage(
+        return internal.enqueueMessage(
+            self,
             sender_id,
             target_id,
             .unsubscribe,
             topic,
         );
-    }
-
-    fn enqueueMessage(
-        self: *Self,
-        sender_id: ?[]const u8,
-        target_id: []const u8,
-        message_type: MessageType,
-        message: anytype,
-    ) !void {
-        const actor = self.registry.getByID(target_id);
-        if (actor) |a| {
-            const T = @TypeOf(message);
-            switch (@typeInfo(T)) {
-                .pointer => |ptr| {
-                    if (ptr.child != u8 and @typeInfo(ptr.child) != .array) {
-                        @compileError("Only []const u8 or string literals supported");
-                    }
-                    if (@typeInfo(ptr.child) == .array) {
-                        if (@typeInfo(ptr.child).array.child != u8) {
-                            @compileError("Only []const u8 or string literals supported");
-                        }
-                    }
-                },
-                .@"struct" => if (!comptime type_utils.hasMethod(T, "encode")) @compileError("Struct must have encode() method"),
-                else => @compileError("Message must be []const u8, a string literal or struct with an encode() method"),
-            }
-
-            const message_data = if (@typeInfo(T) == .@"struct") blk: {
-                break :blk try message.encode(self.allocator);
-            } else blk: {
-                break :blk message;
-            };
-            defer if (@typeInfo(T) == .@"struct") self.allocator.free(message_data);
-
-            const envelope = Envelope.init(sender_id, message_type, message_data);
-            try a.inbox.enqueue(envelope);
-            try a.notifyMessageHandler();
-        } else {
-            std.log.warn("Actor not found: {s}", .{target_id});
-        }
     }
 };

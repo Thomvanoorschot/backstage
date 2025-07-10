@@ -157,8 +157,8 @@ pub fn main() !void {
     });
 
     // Send direct messages
-    try engine.send(null, "subscriber", "Direct message");
-    try engine.send(null, "subscriber", MyActorMessage{
+    try engine.send("subscriber", "Direct message");
+    try engine.send("subscriber", MyActorMessage{
         .message = .{ .input = "Hello, World!" },
     });
     // Run the event loop
