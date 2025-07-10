@@ -24,10 +24,6 @@ pub const ActorOptions = struct {
     capacity: usize = 1024,
 };
 
-pub const TestStruct = struct {
-    a: u8,
-};
-
 pub const Engine = struct {
     registry: Registry,
     allocator: Allocator,
@@ -57,11 +53,13 @@ pub const Engine = struct {
         self.loop.deinit();
         var it = self.registry.actorsIDMap.iterator();
         while (it.next()) |entry| {
+            // We are calling the deinit function for the actor implementation here.
+            // Normally the deinit function is called on the actor interface itself,
+            // but the engine itself is being deinitialized.
             entry.value_ptr.*.deinitFnPtr(entry.value_ptr.*.impl) catch |err| {
                 std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});
             };
-            entry.value_ptr.*.deinit();
-            self.allocator.destroy(entry.value_ptr.*);
+            try internal.deinitActorByReference(self, entry.value_ptr.*);
         }
         self.registry.deinit();
     }
@@ -71,7 +69,7 @@ pub const Engine = struct {
         if (actor) |a| {
             return unsafeAnyOpaqueCast(ActorType, a.impl);
         }
-        const actor_interface = try ActorInterface.create(
+        const actor_interface = try ActorInterface.init(
             self.allocator,
             self,
             ActorType,

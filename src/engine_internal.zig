@@ -2,10 +2,12 @@ const std = @import("std");
 const engine = @import("engine.zig");
 const envlp = @import("envelope.zig");
 const type_utils = @import("type_utils.zig");
+const actr = @import("actor.zig");
 
 const Engine = engine.Engine;
 const Envelope = envlp.Envelope;
 const MessageType = envlp.MessageType;
+const ActorInterface = actr.ActorInterface;
 
 pub fn enqueueMessage(
     self: *Engine,
@@ -47,14 +49,33 @@ pub fn enqueueMessage(
     }
 }
 
-pub fn removeActor(self: *Engine, id: []const u8) !void {
+pub fn deinitActorByID(self: *Engine, id: []const u8) !void {
     const actor = self.registry.fetchRemove(id);
-    if (actor) |a| {
-        a.deinit();
-        if (self.inspector != null) {
-            self.inspector.?.actorTerminated(a) catch |err| {
-                std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
-            };
-        }
+    if (!actor) {
+        std.log.warn("Actor not found: {s}", .{id});
+        return;
+    }
+    deinitActor(self, actor.*);
+}
+
+pub fn deinitActorByReference(self: *Engine, actor: *ActorInterface) !void {
+    if (!self.registry.remove(actor.ctx.actor_id)) {
+        std.log.warn("Actor not found: {s}", .{actor.ctx.actor_id});
+        return;
+    }
+    deinitActor(self, actor);
+}
+
+fn deinitActor(self: *Engine, actor: *ActorInterface) void {
+    actor.deinit();
+    removeFromInspector(self, actor);
+    self.allocator.destroy(actor);
+}
+
+fn removeFromInspector(self: *Engine, actor: *ActorInterface) void {
+    if (self.inspector != null) {
+        self.inspector.?.actorTerminated(actor) catch |err| {
+            std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
+        };
     }
 }

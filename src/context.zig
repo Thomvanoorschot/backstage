@@ -45,7 +45,7 @@ pub const Context = struct {
         return self;
     }
 
-    pub fn shutdown(self: *Self) !void {
+    pub fn deinit(self: *Self) !void {
         for (self.timer_completions.items) |completion| {
             var cancel_completion: xev.Completion = .{
                 .op = .{
@@ -82,7 +82,7 @@ pub const Context = struct {
         if (self.child_actors.count() != 0) {
             var it = self.child_actors.valueIterator();
             while (it.next()) |actor| {
-                try actor.*.deinitFnPtr(actor.*.impl);
+                try engine_internal.deinitActorByReference(self.engine, actor.*);
             }
             self.child_actors.deinit();
         }
@@ -91,7 +91,7 @@ pub const Context = struct {
             _ = parent.*.ctx.detachChildActor(self.actor);
         }
 
-        try engine_internal.removeActor(self.engine, self.actor_id);
+        try engine_internal.deinitActorByReference(self.engine, self.actor);
     }
 
     pub fn send(self: *const Self, target_id: []const u8, message: anytype) !void {

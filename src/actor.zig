@@ -35,7 +35,7 @@ pub const ActorInterface = struct {
 
     const Self = @This();
 
-    pub fn create(
+    pub fn init(
         allocator: Allocator,
         engine: *Engine,
         comptime ActorType: type,
@@ -68,6 +68,15 @@ pub const ActorInterface = struct {
         try self.wakeup.notify();
 
         return self;
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.is_shutting_down = true;
+        self.inbox.deinit();
+        self.allocator.destroy(self.inbox);
+        self.ctx.allocator.destroy(self.ctx);
+        self.arena_state.deinit();
+        self.wakeup.deinit();
     }
 
     pub fn notifyMessageHandler(self: *Self) !void {
@@ -115,15 +124,6 @@ pub const ActorInterface = struct {
             }
         }
         return .rearm;
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.is_shutting_down = true;
-        self.inbox.deinit();
-        self.allocator.destroy(self.inbox);
-        self.ctx.allocator.destroy(self.ctx);
-        self.arena_state.deinit();
-        self.wakeup.deinit();
     }
 
     fn addSubscriber(self: *Self, envelope: Envelope) !void {
