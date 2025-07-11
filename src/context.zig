@@ -5,6 +5,7 @@ const eng = @import("engine.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
 const engine_internal = @import("engine_internal.zig");
+const loop_utils = @import("loop_utils.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -45,52 +46,42 @@ pub const Context = struct {
         return self;
     }
 
-    pub fn deinit(self: *Self) !void {
+    pub fn deinit(self: *Self) void {
+        // Cancel and cleanup timer completions
         for (self.timer_completions.items) |completion| {
-            var cancel_completion: xev.Completion = .{
-                .op = .{
-                    .cancel = .{
-                        .c = completion,
-                    },
-                },
-            };
-            self.engine.loop.add(&cancel_completion);
+            loop_utils.cancelCompletion(&self.engine.loop, completion);
         }
         self.timer_completions.deinit();
 
-        if (self.subscribed_to_actors.count() != 0) {
-            var it = self.subscribed_to_actors.iterator();
-            while (it.next()) |entry| {
-                var it2 = entry.value_ptr.keyIterator();
-                while (it2.next()) |topic| {
-                    self.engine.unsubscribeFromActorTopic(self.actor_id, entry.key_ptr.*, topic.*) catch |err| {
-                        std.log.warn("Failed to unsubscribe from {s} topic {s}: {}", .{ entry.key_ptr.*, topic.*, err });
-                    };
-                }
-
-                var topic_it = entry.value_ptr.keyIterator();
-                while (topic_it.next()) |topic| {
-                    self.allocator.free(topic.*);
-                }
-                entry.value_ptr.deinit();
-
-                self.allocator.free(entry.key_ptr.*);
+        // Cleanup subscriptions
+        var sub_it = self.subscribed_to_actors.iterator();
+        while (sub_it.next()) |entry| {
+            var topic_it = entry.value_ptr.keyIterator();
+            while (topic_it.next()) |topic| {
+                self.engine.unsubscribeFromActorTopic(self.actor_id, entry.key_ptr.*, topic.*) catch |err| {
+                    std.log.warn("Failed to unsubscribe from {s} topic {s}: {}", .{ entry.key_ptr.*, topic.*, err });
+                };
+                self.allocator.free(topic.*);
             }
-            self.subscribed_to_actors.deinit();
+            entry.value_ptr.deinit();
+            self.allocator.free(entry.key_ptr.*);
         }
+        self.subscribed_to_actors.deinit();
 
-        if (self.child_actors.count() != 0) {
-            var it = self.child_actors.valueIterator();
-            while (it.next()) |actor| {
-                try engine_internal.deinitActorByReference(self.engine, actor.*);
-            }
-            self.child_actors.deinit();
+        // // Cleanup child actors
+        var child_it = self.child_actors.valueIterator();
+        while (child_it.next()) |actor| {
+            try engine_internal.deinitActorByReference(self.engine, actor.*);
         }
+        self.child_actors.deinit();
 
+        // // Detach from parent
         if (self.parent_actor) |parent| {
-            _ = parent.*.ctx.detachChildActor(self.actor);
+            _ = parent.ctx.detachChildActor(self.actor);
         }
+    }
 
+    pub fn shutdown(self: *Self) !void {
         try engine_internal.deinitActorByReference(self.engine, self.actor);
     }
 

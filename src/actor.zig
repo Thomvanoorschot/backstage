@@ -74,7 +74,7 @@ pub const ActorInterface = struct {
         self.is_shutting_down = true;
         self.inbox.deinit();
         self.allocator.destroy(self.inbox);
-        self.ctx.allocator.destroy(self.ctx);
+        self.ctx.deinit();
         self.arena_state.deinit();
         self.wakeup.deinit();
     }
