@@ -63,7 +63,9 @@ pub fn deinitActorByReference(self: *Engine, actor: *ActorInterface) !void {
         std.log.warn("Actor not found: {s}", .{actor.ctx.actor_id});
         return;
     }
-    deinitActor(self, actor);
+    actor.deinit();
+    removeFromInspector(self, actor);
+    self.allocator.destroy(actor);
 }
 
 fn deinitActor(self: *Engine, actor: *ActorInterface) void {

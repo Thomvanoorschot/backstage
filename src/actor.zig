@@ -6,6 +6,7 @@ const envlp = @import("envelope.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
 const ispct = @import("inspector/inspector.zig");
+const loop_utils = @import("loop_utils.zig");
 
 const Allocator = std.mem.Allocator;
 const Inbox = inbox.Inbox;
@@ -27,7 +28,6 @@ pub const ActorInterface = struct {
     wakeup: xev.Async,
     wakeup_completion: xev.Completion = undefined,
     arena_state: std.heap.ArenaAllocator,
-    is_shutting_down: bool = false,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
     receiveFnPtr: *const fn (ptr: *anyopaque, envelope: Envelope) anyerror!void,
@@ -71,7 +71,7 @@ pub const ActorInterface = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.is_shutting_down = true;
+        loop_utils.cancelCompletion(&self.ctx.engine.loop, &self.wakeup_completion);
         self.inbox.deinit();
         self.allocator.destroy(self.inbox);
         self.ctx.deinit();
