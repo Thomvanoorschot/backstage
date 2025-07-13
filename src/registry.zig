@@ -18,6 +18,10 @@ pub const Registry = struct {
         self.actorsIDMap.deinit();
     }
 
+    pub fn remove(self: *Registry, id: []const u8) bool {
+        return self.actorsIDMap.remove(id);
+    }
+
     pub fn fetchRemove(self: *Registry, id: []const u8) ?*ActorInterface {
         const keyval = self.actorsIDMap.fetchRemove(id);
         if (keyval) |kv| {
