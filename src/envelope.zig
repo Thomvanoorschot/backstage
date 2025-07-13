@@ -5,6 +5,7 @@ pub const MessageType = enum(u8) {
     publish = 1,
     subscribe = 2,
     unsubscribe = 3,
+    poison_pill = 4,
 };
 
 pub const Envelope = struct {

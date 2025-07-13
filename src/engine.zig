@@ -145,4 +145,14 @@ pub const Engine = struct {
             topic,
         );
     }
+
+    pub fn poisonPill(self: *Self, target_id: []const u8) !void {
+        return internal.enqueueMessage(
+            self,
+            null,
+            target_id,
+            .poison_pill,
+            null,
+        );
+    }
 };

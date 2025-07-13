@@ -121,6 +121,9 @@ pub const ActorInterface = struct {
                         std.log.err("Tried to remove topic subscription but failed: {s}", .{@errorName(err)});
                     };
                 },
+                .poison_pill => {
+                    self.deinit();
+                },
             }
         }
         return .rearm;

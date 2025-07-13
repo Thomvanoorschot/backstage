@@ -81,8 +81,12 @@ pub const Context = struct {
         }
     }
 
-    pub fn shutdown(self: *Self) !void {
-        try engine_internal.deinitActorByReference(self.engine, self.actor);
+    // pub fn shutdown(self: *Self) !void {
+    //     try engine_internal.deinitActorByReference(self.engine, self.actor);
+    // }
+
+    pub fn poisonPill(self: *Self) !void {
+        try self.engine.poisonPill(self.actor_id);
     }
 
     pub fn send(self: *const Self, target_id: []const u8, message: anytype) !void {
