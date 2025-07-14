@@ -72,7 +72,10 @@ pub const Context = struct {
 
         // // Detach from parent
         if (self.parent_actor) |parent| {
-            _ = parent.ctx.detachChildActor(self.actor);
+            const could_detach = parent.ctx.detachChildActor(self.actor);
+            if (!could_detach) {
+                std.log.warn("Failed to detach child actor {s} from parent {s}", .{ self.actor_id, parent.ctx.actor_id });
+            }
         }
     }
 

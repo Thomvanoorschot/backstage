@@ -31,7 +31,7 @@ pub const ActorInterface = struct {
     ctx: *Context,
     wakeup: xev.Async,
     wakeup_completion: xev.Completion = undefined,
-    wakeup_cancel_completion: xev.Completion = undefined,
+    wakeup_cancel_completion: ?xev.Completion = null,
     arena_state: std.heap.ArenaAllocator,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
@@ -77,14 +77,6 @@ pub const ActorInterface = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.wakeup_cancel_completion = .{
-            .op = .{
-                .cancel = .{
-                    .c = &self.wakeup_completion,
-                },
-            },
-        };
-        self.ctx.engine.loop.add(&self.wakeup_cancel_completion);
         self.inbox.deinit();
         self.allocator.destroy(self.inbox);
         self.ctx.deinit();
@@ -93,7 +85,13 @@ pub const ActorInterface = struct {
         self.state = .closed;
     }
 
-    pub fn notifyMessageHandler(self: *Self) !void {
+    // I have yet to find a better way to handle cancelling the wakeup async completion
+    // When I try to cancel it there seems to go so something wrong in the pop fn of the xev.IntrusiveQueue
+    pub fn notifyMessageHandler(maybe_self: ?*Self) !void {
+        const self = maybe_self orelse return;
+        if (self.state != .active) {
+            return;
+        }
         try self.wakeup.notify();
     }
 
