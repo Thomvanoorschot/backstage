@@ -6,7 +6,7 @@ const envlp = @import("envelope.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
 const ispct = @import("inspector/inspector.zig");
-const loop_utils = @import("loop_utils.zig");
+const engine_internal = @import("engine_internal.zig");
 
 const Allocator = std.mem.Allocator;
 const Inbox = inbox.Inbox;
@@ -17,16 +17,21 @@ const ActorOptions = eng.ActorOptions;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
 const Inspector = ispct.Inspector;
 
-// TODO This is a bit of a hack, storing it on the stack causes a segfault when the actor is destroyed
-var cancel_completion: xev.Completion = undefined;
+pub const ActorState = enum {
+    active,
+    closing,
+    closed,
+};
 
 pub const ActorInterface = struct {
     allocator: Allocator,
     impl: *anyopaque,
+    state: ActorState,
     inbox: *Inbox,
     ctx: *Context,
     wakeup: xev.Async,
     wakeup_completion: xev.Completion = undefined,
+    wakeup_cancel_completion: xev.Completion = undefined,
     arena_state: std.heap.ArenaAllocator,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
@@ -45,6 +50,7 @@ pub const ActorInterface = struct {
         const self = try allocator.create(Self);
         self.* = .{
             .allocator = allocator,
+            .state = .active,
             .arena_state = std.heap.ArenaAllocator.init(allocator),
             .deinitFnPtr = makeTypeErasedDeinitFn(ActorType),
             .receiveFnPtr = makeTypeErasedReceiveFn(ActorType),
@@ -71,12 +77,20 @@ pub const ActorInterface = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        loop_utils.cancelCompletion(&self.ctx.engine.loop, &self.wakeup_completion);
+        self.wakeup_cancel_completion = .{
+            .op = .{
+                .cancel = .{
+                    .c = &self.wakeup_completion,
+                },
+            },
+        };
+        self.ctx.engine.loop.add(&self.wakeup_cancel_completion);
         self.inbox.deinit();
         self.allocator.destroy(self.inbox);
         self.ctx.deinit();
         self.arena_state.deinit();
         self.wakeup.deinit();
+        self.state = .closed;
     }
 
     pub fn notifyMessageHandler(self: *Self) !void {
@@ -96,9 +110,14 @@ pub const ActorInterface = struct {
 
         const self = self_.?;
 
-        while (self.inbox.dequeue() catch null) |envelope| {
-            defer envelope.deinit(self.allocator);
+        if (self.state != .active) {
+            return .disarm;
+        }
 
+        while (self.inbox.dequeue() catch |err| {
+            std.log.err("Tried to dequeue message but failed: {s}", .{@errorName(err)});
+            return .rearm;
+        }) |envelope| {
             if (self.inspector) |inspector| {
                 inspector.envelopeReceived(self, envelope) catch |err| {
                     std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
@@ -122,9 +141,12 @@ pub const ActorInterface = struct {
                     };
                 },
                 .poison_pill => {
-                    self.deinit();
+                    self.state = .closing;
+                    engine_internal.deinitActorByReference(self.ctx.engine, self);
+                    return .disarm;
                 },
             }
+            envelope.deinit(self.allocator);
         }
         return .rearm;
     }

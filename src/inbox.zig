@@ -15,7 +15,7 @@ pub const Inbox = struct {
     pub fn init(allocator: std.mem.Allocator, initial_capacity: usize) !*Inbox {
         var cap = @max(1, initial_capacity);
         if (!std.math.isPowerOfTwo(cap)) {
-            cap = std.math.ceilPowerOfTwo(usize, cap) catch unreachable;
+            cap = try std.math.ceilPowerOfTwo(usize, cap);
         }
 
         const buf = try allocator.alloc(u8, cap);

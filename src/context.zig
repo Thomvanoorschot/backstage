@@ -5,7 +5,6 @@ const eng = @import("engine.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
 const engine_internal = @import("engine_internal.zig");
-const loop_utils = @import("loop_utils.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -48,11 +47,7 @@ pub const Context = struct {
 
     pub fn deinit(self: *Self) void {
         // Cancel and cleanup timer completions
-        for (self.timer_completions.items) |completion| {
-            loop_utils.cancelCompletion(&self.engine.loop, completion);
-        }
-        self.timer_completions.deinit();
-
+        self.deinitTimers();
         // Cleanup subscriptions
         var sub_it = self.subscribed_to_actors.iterator();
         while (sub_it.next()) |entry| {
@@ -71,7 +66,7 @@ pub const Context = struct {
         // // Cleanup child actors
         var child_it = self.child_actors.valueIterator();
         while (child_it.next()) |actor| {
-            try engine_internal.deinitActorByReference(self.engine, actor.*);
+            engine_internal.deinitActorByReference(self.engine, actor.*);
         }
         self.child_actors.deinit();
 
@@ -80,10 +75,6 @@ pub const Context = struct {
             _ = parent.ctx.detachChildActor(self.actor);
         }
     }
-
-    // pub fn shutdown(self: *Self) !void {
-    //     try engine_internal.deinitActorByReference(self.engine, self.actor);
-    // }
 
     pub fn poisonPill(self: *Self) !void {
         try self.engine.poisonPill(self.actor_id);
@@ -211,5 +202,37 @@ pub const Context = struct {
     }
     pub fn detachChildActorByID(self: *Self, id: []const u8) bool {
         return self.child_actors.remove(id);
+    }
+
+    fn deinitTimers(self: *Self) void {
+        for (self.timer_completions.items) |completion| {
+            const close_timer_completion = self.allocator.create(xev.Completion) catch |err| {
+                std.log.err("Failed to create close timer completion: {s}", .{@errorName(err)});
+                return;
+            };
+            close_timer_completion.* = .{
+                .op = .{
+                    .cancel = .{
+                        .c = completion,
+                    },
+                },
+                .callback = (struct {
+                    fn callback(
+                        self_: ?*anyopaque,
+                        _: *xev.Loop,
+                        c: *xev.Completion,
+                        r: xev.Result,
+                    ) xev.CallbackAction {
+                        _ = r.cancel catch unreachable;
+                        const inner_self = unsafeAnyOpaqueCast(Self, self_);
+                        defer inner_self.allocator.destroy(c);
+                        return .disarm;
+                    }
+                }).callback,
+                .userdata = self,
+            };
+            self.engine.loop.add(close_timer_completion);
+        }
+        self.timer_completions.deinit();
     }
 };

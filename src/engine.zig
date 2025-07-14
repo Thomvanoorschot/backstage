@@ -59,7 +59,7 @@ pub const Engine = struct {
             entry.value_ptr.*.deinitFnPtr(entry.value_ptr.*.impl) catch |err| {
                 std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});
             };
-            try internal.deinitActorByReference(self, entry.value_ptr.*);
+            internal.deinitActorByReference(self, entry.value_ptr.*);
         }
         self.registry.deinit();
     }
@@ -152,7 +152,7 @@ pub const Engine = struct {
             null,
             target_id,
             .poison_pill,
-            null,
+            "",
         );
     }
 };

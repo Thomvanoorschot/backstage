@@ -49,7 +49,7 @@ pub fn enqueueMessage(
     }
 }
 
-pub fn deinitActorByID(self: *Engine, id: []const u8) !void {
+pub fn deinitActorByID(self: *Engine, id: []const u8) void {
     const actor = self.registry.fetchRemove(id);
     if (!actor) {
         std.log.warn("Actor not found: {s}", .{id});
@@ -58,7 +58,7 @@ pub fn deinitActorByID(self: *Engine, id: []const u8) !void {
     deinitActor(self, actor.*);
 }
 
-pub fn deinitActorByReference(self: *Engine, actor: *ActorInterface) !void {
+pub fn deinitActorByReference(self: *Engine, actor: *ActorInterface) void {
     if (!self.registry.remove(actor.ctx.actor_id)) {
         std.log.warn("Actor not found: {s}", .{actor.ctx.actor_id});
         return;
