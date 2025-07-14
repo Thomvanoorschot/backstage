@@ -104,7 +104,6 @@ const MyActor = struct {
     }
 
     pub fn receive(self: *Self, envelope: Envelope) !void {
-        defer envelope.deinit(self.allocator);
         // This example shows zig-protobuf encoded payloads, any encoding (or none at all) would work
         const actor_msg: MyActorMessage = try MyActorMessage.decode(message.payload, self.allocator);
         if (actor_msg.message == null) {
