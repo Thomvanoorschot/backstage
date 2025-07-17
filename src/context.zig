@@ -5,11 +5,9 @@ const eng = @import("engine.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
 const engine_internal = @import("engine_internal.zig");
-const actr_factory = @import("actor_factory.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
-const ActorFactory = actr_factory.ActorFactory;
 const ActorInterface = act.ActorInterface;
 const Engine = eng.Engine;
 const ActorOptions = eng.ActorOptions;
@@ -19,7 +17,6 @@ pub const Context = struct {
     allocator: Allocator,
     actor_id: []const u8,
     engine: *Engine,
-    factory: *ActorFactory,
     actor: *ActorInterface,
     parent_actor: ?*ActorInterface,
     child_actors: std.StringHashMap(*ActorInterface),
@@ -86,10 +83,6 @@ pub const Context = struct {
         try self.engine.poisonPill(self.actor_id);
     }
 
-    pub fn getActor(self: *Self, comptime ActorType: type, key: []const u8) !*ActorType {
-        return self.factory.getActor(ActorType, key);
-    }
-    
     pub fn send(self: *const Self, target_id: []const u8, message: anytype) !void {
         try engine_internal.enqueueMessage(
             self.engine,
@@ -195,7 +188,9 @@ pub const Context = struct {
         self.engine.loop.timer(completion, delay_ms, userdata, callback);
     }
 
-x
+    pub fn getActor(self: *const Self, id: []const u8) ?*ActorInterface {
+        return self.engine.registry.getByID(id);
+    }
     pub fn spawnActor(self: *Self, comptime ActorType: type, options: ActorOptions) !*ActorType {
         return try self.engine.spawnActor(ActorType, options);
     }

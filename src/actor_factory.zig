@@ -19,7 +19,7 @@ pub const ActorFactory = struct {
         const actor_id = ActorID.init(@typeName(ActorType), key);
 
         if (self.engine.registry.getByID(actor_id)) |actor| {
-            return unsafeAnyOpaqueCast(ActorType, actor.impl);
+            return unsafeAnyOpaqueCast(ActorType, actor.ptr);
         }
 
         return self.engine.spawnActor(ActorType, .{

@@ -44,9 +44,9 @@ pub fn enqueueMessage(
         const envelope = Envelope.init(sender_id, message_type, message_data);
         try a.inbox.enqueue(envelope);
         try a.notifyMessageHandler();
-    } else {
-        std.log.warn("Actor not found: {s}", .{target_id});
+        return;
     }
+    std.log.warn("Actor not found: {s}", .{target_id});
 }
 
 pub fn deinitActorByID(self: *Engine, id: []const u8) void {

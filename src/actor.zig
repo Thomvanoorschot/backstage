@@ -23,9 +23,15 @@ pub const ActorState = enum {
     closed,
 };
 
+const VTable = struct {
+    deinit: *const fn (*anyopaque) anyerror!void,
+    receive: *const fn (*anyopaque, Envelope) anyerror!void,
+};
+
 pub const ActorInterface = struct {
     allocator: Allocator,
-    impl: *anyopaque,
+    ptr: *anyopaque,
+    vtable: *const VTable,
     state: ActorState,
     inbox: *Inbox,
     ctx: *Context,
@@ -34,8 +40,7 @@ pub const ActorInterface = struct {
     wakeup_cancel_completion: ?xev.Completion = null,
     arena_state: std.heap.ArenaAllocator,
     inspector: ?*Inspector,
-    deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
-    receiveFnPtr: *const fn (ptr: *anyopaque, envelope: Envelope) anyerror!void,
+
     actor_type_name: []const u8,
 
     const Self = @This();
@@ -50,13 +55,15 @@ pub const ActorInterface = struct {
         const self = try allocator.create(Self);
         self.* = .{
             .allocator = allocator,
+            .ptr = try ActorType.init(self.ctx, self.arena_state.allocator()),
+            .vtable = &.{
+                .deinit = makeTypeErasedDeinitFn(ActorType),
+                .receive = makeTypeErasedReceiveFn(ActorType),
+            },
             .state = .active,
             .arena_state = std.heap.ArenaAllocator.init(allocator),
-            .deinitFnPtr = makeTypeErasedDeinitFn(ActorType),
-            .receiveFnPtr = makeTypeErasedReceiveFn(ActorType),
             .inbox = try Inbox.init(self.allocator, options.capacity),
             .ctx = try Context.init(self.arena_state.allocator(), engine, self, options.id),
-            .impl = try ActorType.init(self.ctx, self.arena_state.allocator()),
             .inspector = inspector,
             .actor_type_name = type_utils.getTypeName(ActorType),
             .wakeup = try xev.Async.init(),
@@ -124,7 +131,7 @@ pub const ActorInterface = struct {
 
             switch (envelope.message_type) {
                 .send, .publish => {
-                    self.receiveFnPtr(self.impl, envelope) catch |err| {
+                    self.receiveFnPtr(self.ptr, envelope) catch |err| {
                         std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
                     };
                 },

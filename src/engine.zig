@@ -72,7 +72,7 @@ pub const Engine = struct {
     pub fn spawnActor(self: *Self, comptime ActorType: type, options: ActorOptions) !*ActorType {
         const actor = self.registry.getByID(options.id);
         if (actor) |a| {
-            return unsafeAnyOpaqueCast(ActorType, a.impl);
+            return unsafeAnyOpaqueCast(ActorType, a.ptr);
         }
         const actor_interface = try ActorInterface.init(
             self.allocator,
@@ -81,7 +81,7 @@ pub const Engine = struct {
             options,
             self.inspector,
         );
-        errdefer actor_interface.deinitFnPtr(actor_interface.impl) catch |err| {
+        errdefer actor_interface.deinitFnPtr(actor_interface.ptr) catch |err| {
             std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});
         };
 
@@ -91,7 +91,7 @@ pub const Engine = struct {
                 std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});
             };
         }
-        return unsafeAnyOpaqueCast(ActorType, actor_interface.impl);
+        return unsafeAnyOpaqueCast(ActorType, actor_interface.ptr);
     }
 
     pub fn send(
