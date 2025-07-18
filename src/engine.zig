@@ -9,7 +9,6 @@ const build_options = @import("build_options");
 const ispct = @import("inspector/inspector.zig");
 const zignite = if (build_options.enable_inspector) @import("zignite") else {};
 const internal = @import("engine_internal.zig");
-const actr_factory = @import("actor_factory.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -19,7 +18,6 @@ const MessageType = envlp.MessageType;
 const Envelope = envlp.Envelope;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
 const Inspector = ispct.Inspector;
-const ActorFactory = actr_factory.ActorFactory;
 
 pub const ActorOptions = struct {
     id: []const u8,
@@ -30,7 +28,6 @@ pub const Engine = struct {
     registry: Registry,
     allocator: Allocator,
     loop: xev.Loop,
-    actor_factory: ActorFactory,
     inspector: ?*Inspector = null,
     const Self = @This();
     pub fn init(allocator: Allocator) !*Self {
@@ -38,7 +35,6 @@ pub const Engine = struct {
         self.* = .{
             .allocator = allocator,
             .registry = Registry.init(allocator),
-            .actor_factory = ActorFactory.init(self),
             .loop = try xev.Loop.init(.{}),
         };
         if (build_options.enable_inspector) {
