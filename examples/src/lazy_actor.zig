@@ -6,6 +6,7 @@ const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
 
+// @generate-proxy
 const LazyActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
