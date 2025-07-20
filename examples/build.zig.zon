@@ -11,5 +11,6 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "generated",
     },
 }

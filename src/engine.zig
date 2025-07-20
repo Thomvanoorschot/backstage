@@ -9,6 +9,7 @@ const build_options = @import("build_options");
 const ispct = @import("inspector/inspector.zig");
 const zignite = if (build_options.enable_inspector) @import("zignite") else {};
 const internal = @import("engine_internal.zig");
+const actr_id = @import("actor_id.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -18,9 +19,10 @@ const MessageType = envlp.MessageType;
 const Envelope = envlp.Envelope;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
 const Inspector = ispct.Inspector;
+const ActorID = actr_id.ActorID;
 
 pub const ActorOptions = struct {
-    id: []const u8,
+    id: ActorID,
     capacity: usize = 1024,
 };
 
@@ -52,12 +54,12 @@ pub const Engine = struct {
             self.inspector.?.deinit();
         }
         self.loop.deinit();
-        var it = self.registry.actorsIDMap.iterator();
+        var it = self.registry.actorsByID.iterator();
         while (it.next()) |entry| {
             // We are calling the deinit function for the actor implementation here.
             // Normally the deinit function is called on the actor interface itself,
             // but the engine itself is being deinitialized.
-            entry.value_ptr.*.deinitFnPtr(entry.value_ptr.*.impl) catch |err| {
+            entry.value_ptr.*.vtable.deinit(entry.value_ptr.*.ptr) catch |err| {
                 std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});
             };
             internal.deinitActorByReference(self, entry.value_ptr.*);
@@ -77,7 +79,7 @@ pub const Engine = struct {
             options,
             self.inspector,
         );
-        errdefer actor_interface.deinitFnPtr(actor_interface.ptr) catch |err| {
+        errdefer actor_interface.vtable.deinit(actor_interface.ptr) catch |err| {
             std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});
         };
 
@@ -92,7 +94,7 @@ pub const Engine = struct {
 
     pub fn send(
         self: *Self,
-        target_id: []const u8,
+        target_id: ActorID,
         message: anytype,
     ) !void {
         return internal.enqueueMessage(
@@ -105,7 +107,7 @@ pub const Engine = struct {
     }
     pub fn publish(
         self: *Self,
-        target_id: []const u8,
+        target_id: ActorID,
         message: anytype,
     ) !void {
         return internal.enqueueMessage(
@@ -119,8 +121,8 @@ pub const Engine = struct {
 
     pub fn subscribeToActorTopic(
         self: *Self,
-        sender_id: []const u8,
-        target_id: []const u8,
+        sender_id: ActorID,
+        target_id: ActorID,
         topic: []const u8,
     ) !void {
         return internal.enqueueMessage(
@@ -134,8 +136,8 @@ pub const Engine = struct {
 
     pub fn unsubscribeFromActorTopic(
         self: *Self,
-        sender_id: []const u8,
-        target_id: []const u8,
+        sender_id: ActorID,
+        target_id: ActorID,
         topic: []const u8,
     ) !void {
         return internal.enqueueMessage(
@@ -147,7 +149,7 @@ pub const Engine = struct {
         );
     }
 
-    pub fn poisonPill(self: *Self, target_id: []const u8) !void {
+    pub fn poisonPill(self: *Self, target_id: ActorID) !void {
         return internal.enqueueMessage(
             self,
             null,

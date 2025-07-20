@@ -170,24 +170,9 @@ fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_nam
     defer output_file.close();
     const writer = output_file.writer();
 
-    try writer.print(
-        \\// AUTO-GENERATED ACTOR PROXY. DO NOT EDIT BY HAND.
-        \\// Generated proxy for {s}
-        \\
-        \\const std = @import("std");
-        \\const backstage = @import("backstage");
-        \\const Context = backstage.Context;
-        \\const Envelope = backstage.Envelope;
-        \\const {s} = @import("{s}").{s};
-        \\
-        \\pub const {s}Proxy = struct {{
-        \\    ctx: *Context,
-        \\    allocator: std.mem.Allocator,
-        \\    underlying: {s},
-        \\    
-        \\    const Self = @This();
-        \\
-    , .{ struct_name, struct_name, file_path, struct_name, struct_name, struct_name });
+    // Parse methods
+    var regular_methods = std.ArrayList(MethodInfo).init(allocator);
+    defer regular_methods.deinit();
 
     var lines = std.mem.splitAny(u8, content, "\n");
     while (lines.next()) |line| {
@@ -198,56 +183,168 @@ fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_nam
         const signature = trimmed[0..brace_pos];
         const method_info = parseMethodSignature(signature) orelse continue;
 
-        if (std.mem.eql(u8, method_info.name, "init")) {
-            try generateInitMethod(allocator, writer, signature, struct_name, method_info.params);
-        } else if (std.mem.eql(u8, method_info.name, "deinit")) {
-            try generateDeinitMethod(writer, signature);
-        } else {
-            try generateRegularMethod(allocator, writer, signature, method_info);
+        if (!std.mem.eql(u8, method_info.name, "init") and !std.mem.eql(u8, method_info.name, "deinit")) {
+            try regular_methods.append(method_info);
         }
     }
 
-    try writer.writeAll("};\n");
-    std.debug.print("Generated: {s}\n", .{output_filename});
+    // Generate the proxy that IS the actor
+    try generateActorProxy(allocator, writer, struct_name, regular_methods.items, file_path);
 }
 
-fn generateInitMethod(allocator: std.mem.Allocator, writer: anytype, signature: []const u8, struct_name: []const u8, params: []const u8) !void {
-    try writer.print("    {s}{{\n", .{signature});
+fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name: []const u8, methods: []const MethodInfo, file_path: []const u8) !void {
+    try writer.print(
+        \\const std = @import("std");
+        \\const backstage = @import("backstage");
+        \\const Context = backstage.Context;
+        \\const MethodCall = backstage.MethodCall;
+        \\const {s} = @import("{s}").{s};
+        \\
+        \\pub const {s}Proxy = struct {{
+        \\    ctx: *Context,
+        \\    allocator: std.mem.Allocator,
+        \\    underlying: {s},
+        \\    
+        \\    const Self = @This();
+        \\
+        \\    pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {{
+        \\        const self = try allocator.create(Self);
+        \\        const underlying = try {s}.init(ctx, allocator);
+        \\        self.* = .{{
+        \\            .ctx = ctx,
+        \\            .allocator = allocator,
+        \\            .underlying = underlying,
+        \\        }};
+        \\        return self;
+        \\    }}
+        \\
+        \\    pub fn deinit(self: *Self) !void {{
+        \\        try self.underlying.deinit();
+        \\        self.allocator.destroy(self);
+        \\    }}
+        \\
+    , .{ struct_name, file_path, struct_name, struct_name, struct_name, struct_name });
 
-    const param_names = try extractParamNames(allocator, params);
+    try generateMethodTable(allocator, writer, methods);
+
+    for (methods, 0..) |method, i| {
+        try generateProxyMethod(allocator, writer, method, i);
+    }
+
+    try generateDispatchFunction(writer, methods.len);
+
+    try writer.writeAll("};\n");
+}
+
+fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: []const MethodInfo) !void {
+    try writer.print("    const MethodFn = *const fn (*Self, []const u8) anyerror!void;\n\n", .{});
+
+    for (methods, 0..) |method, i| {
+        try generateMethodWrapper(allocator, writer, method, i);
+    }
+
+    try writer.print("    const method_table = [_]MethodFn{{\n", .{});
+    for (methods, 0..) |_, i| {
+        try writer.print("        methodWrapper{d},\n", .{i});
+    }
+    try writer.writeAll("    };\n\n");
+}
+
+fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: MethodInfo, index: usize) !void {
+    try writer.print("    fn methodWrapper{d}(self: *Self, params_json: []const u8) !void {{\n", .{index});
+
+    const param_names = try extractParamNames(allocator, method.params);
     defer allocator.free(param_names);
 
-    try writer.print("        return Self{{ .underlying = {s}.init(", .{struct_name});
-    for (param_names, 0..) |name, i| {
-        if (i > 0) try writer.writeAll(", ");
-        try writer.print("{s}", .{name});
-    }
-    try writer.writeAll(") };\n    }\n\n");
-}
+    if (param_names.len > 0) {
+        try writer.writeAll("        const params = try std.json.parseFromSlice(struct {\n");
 
-fn generateDeinitMethod(writer: anytype, signature: []const u8) !void {
-    if (std.mem.indexOf(u8, signature, "_:")) |pos| {
-        const before_param = signature[0..pos];
-        const after_colon = signature[pos + 1 ..];
-        try writer.print("    {s}self{s}{{\n", .{ before_param, after_colon });
+        var param_split = std.mem.splitAny(u8, method.params, ",");
+        while (param_split.next()) |param| {
+            const trimmed = std.mem.trim(u8, param, " \t");
+            if (trimmed.len == 0) continue;
+            if (std.mem.indexOf(u8, trimmed, "self")) |_| continue;
+
+            if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
+                const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
+                const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
+                try writer.print("            {s}: {s},\n", .{ param_name, param_type });
+            }
+        }
+
+        try writer.writeAll("        }, std.heap.page_allocator, params_json);\n");
+        try writer.writeAll("        defer params.deinit();\n");
+
+        try writer.print("        try self.underlying.{s}(", .{method.name});
+        for (param_names, 0..) |name, i| {
+            if (i > 0) try writer.writeAll(", ");
+            try writer.print("params.value.{s}", .{name});
+        }
+        try writer.writeAll(");\n");
     } else {
-        try writer.print("    {s}{{\n", .{signature});
+        try writer.writeAll("        _ = params_json;\n");
+        try writer.print("        try self.underlying.{s}();\n", .{method.name});
     }
-    try writer.writeAll("        self.underlying.deinit();\n    }\n\n");
+
+    try writer.writeAll("    }\n\n");
 }
 
-fn generateRegularMethod(allocator: std.mem.Allocator, writer: anytype, signature: []const u8, method_info: MethodInfo) !void {
-    try writer.print("    {s}{{\n", .{signature});
-
+fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_info: MethodInfo, method_index: usize) !void {
     const param_names = try extractParamNames(allocator, method_info.params);
     defer allocator.free(param_names);
 
-    const return_prefix = if (method_info.has_return) "return " else "";
-    try writer.print("        {s}self.underlying.{s}(", .{ return_prefix, method_info.name });
+    try writer.print("    pub fn {s}(self: *Self", .{method_info.name});
 
-    for (param_names, 0..) |name, i| {
-        if (i > 0) try writer.writeAll(", ");
-        try writer.print("{s}", .{name});
+    if (method_info.params.len > 0) {
+        var param_split = std.mem.splitAny(u8, method_info.params, ",");
+        while (param_split.next()) |param| {
+            const trimmed = std.mem.trim(u8, param, " \t");
+            if (trimmed.len == 0) continue;
+            if (std.mem.indexOf(u8, trimmed, "self")) |_| continue;
+
+            try writer.print(", {s}", .{trimmed});
+        }
     }
-    try writer.writeAll(");\n    }\n\n");
+
+    try writer.writeAll(") !void {\n");
+
+    if (param_names.len > 0) {
+        try writer.writeAll("        var params_json = std.ArrayList(u8).init(self.allocator);\n");
+        try writer.writeAll("        defer params_json.deinit();\n");
+        try writer.writeAll("        try std.json.stringify(.{");
+
+        for (param_names, 0..) |name, i| {
+            if (i > 0) try writer.writeAll(", ");
+            try writer.print(".{s} = {s}", .{ name, name });
+        }
+
+        try writer.writeAll("}, .{}, params_json.writer());\n");
+        try writer.writeAll("        const params_str = try params_json.toOwnedSlice();\n");
+        try writer.writeAll("        defer self.allocator.free(params_str);\n");
+    } else {
+        try writer.writeAll("        const params_str = \"\";\n");
+    }
+
+    try writer.print(
+        \\        const method_call = MethodCall{{
+        \\            .method_id = {d},
+        \\            .params = params_str,
+        \\        }};
+        \\        try self.ctx.sendMethodCall(self.ctx.actor_id, method_call);
+        \\    }}
+        \\
+        \\
+    , .{method_index});
+}
+
+fn generateDispatchFunction(writer: anytype, method_count: usize) !void {
+    try writer.print(
+        \\    pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {{
+        \\        if (method_call.method_id >= {d}) {{
+        \\            return error.UnknownMethod;
+        \\        }}
+        \\        try method_table[method_call.method_id](self, method_call.params);
+        \\    }}
+        \\
+    , .{method_count});
 }

@@ -17,7 +17,7 @@ pub const Registry = struct {
     }
 
     pub fn deinit(self: *Registry) void {
-        self.actorsIDMap.deinit();
+        self.actorsByID.deinit();
     }
 
     pub fn remove(self: *Registry, id: ActorID) bool {

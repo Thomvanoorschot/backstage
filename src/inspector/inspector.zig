@@ -53,7 +53,7 @@ pub const Inspector = struct {
 
     pub fn actorSpawned(self: *Inspector, actor: *ActorInterface) !void {
         try self.state.actors.append(ActorSnapshot{
-            .id = try ManagedString.copy(actor.ctx.actor_id, self.allocator),
+            .id = try ManagedString.copy(try actor.actor_id.toString(self.allocator), self.allocator),
             .actor_type_name = try ManagedString.copy(actor.actor_type_name, self.allocator),
         });
         try self.tick();
@@ -61,7 +61,7 @@ pub const Inspector = struct {
 
     pub fn actorTerminated(self: *Inspector, actor: *ActorInterface) !void {
         for (self.state.actors.items, 0..) |*actor_snapshot, i| {
-            if (std.mem.eql(u8, actor_snapshot.id.Owned.str, actor.ctx.actor_id)) {
+            if (std.mem.eql(u8, actor_snapshot.id.Owned.str, try actor.actor_id.toString(self.allocator))) {
                 const removed_actor = self.state.actors.swapRemove(i);
                 removed_actor.deinit();
                 break;
@@ -74,7 +74,8 @@ pub const Inspector = struct {
         try updateInboxThroughputMetrics(&self.state.inbox_throughput_metrics.?, @floatFromInt(std.time.milliTimestamp()));
 
         for (self.state.actors.items) |*actor_snapshot| {
-            if (std.mem.eql(u8, actor_snapshot.id.Owned.str, actor.ctx.actor_id)) {
+            // TODO This might be wrong now
+            if (std.mem.eql(u8, actor_snapshot.id.Owned.str, try actor.actor_id.toString(self.allocator))) {
                 // actor_snapshot.last_message = ActorMessage{
                 //     .sender_id = ManagedString.static("test"),
                 //     .message_type = ManagedString.static("test"),
