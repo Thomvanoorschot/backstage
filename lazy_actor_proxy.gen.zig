@@ -5,26 +5,24 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
+const LazyActor = @import("lazy_actor.zig").LazyActor;
 
 pub const LazyActorProxy = struct {
-    const Self = @This();
-    
     ctx: *Context,
     allocator: std.mem.Allocator,
+    underlying: LazyActor,
+    
+    const Self = @This();
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
-        _ = ctx;
-        _ = allocator;
-        // TODO: implement
+        return Self{ .underlying = LazyActor.init(ctx, allocator) };
     }
 
-    pub fn receive(self: *Self, envelope: Envelope) !void {
-        _ = self;
-        _ = envelope;
-        // TODO: implement
+    pub fn deinit(self: *Self) !void {
+        self.underlying.deinit();
     }
 
-    pub fn deinit(_: *Self) !void {
-        // TODO: implement
+    pub fn addAmount(self: *Self, amount: u64) !void {
+        return self.underlying.addAmount(amount);
     }
 
 };

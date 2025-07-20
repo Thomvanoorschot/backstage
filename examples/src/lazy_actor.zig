@@ -10,7 +10,7 @@ const Envelope = backstage.Envelope;
 const LazyActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
-    hello_world_received: bool = false,
+    amount: u64 = 0,
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
@@ -21,15 +21,12 @@ const LazyActor = struct {
         };
         return self;
     }
+    pub fn deinit(_: *Self) !void {}
 
-    pub fn receive(self: *Self, envelope: Envelope) !void {
-        if (std.mem.eql(u8, envelope.message, "Hello, world!")) {
-            self.hello_world_received = true;
-            std.log.info("{s}", .{envelope.message});
-        }
+    pub fn addAmount(self: *Self, amount: u64) !void {
+        self.amount += amount;
     }
 
-    pub fn deinit(_: *Self) !void {}
 };
 
 test "Lazy actor" {
@@ -44,7 +41,7 @@ test "Lazy actor" {
     const test_actor = try engine.spawnActor(LazyActor, .{
         .id = "test_actor",
     });
-    try engine.send("test_actor", "Hello, world!");
+    try test_actor.addAmount(10);
     try engine.loop.run(.once);
-    try testing.expect(test_actor.hello_world_received);
+    try testing.expect(test_actor.amount == 10);
 }
