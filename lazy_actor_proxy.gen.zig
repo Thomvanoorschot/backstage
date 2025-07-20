@@ -5,7 +5,7 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
-const LazyActor = @import("lazy_actor.zig").LazyActor;
+const LazyActor = @import("examples/src/lazy_actor.zig").LazyActor;
 
 pub const LazyActorProxy = struct {
     ctx: *Context,

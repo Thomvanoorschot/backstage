@@ -160,7 +160,6 @@ fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_nam
     defer output_file.close();
     const writer = output_file.writer();
 
-    // Write header
     try writer.print(
         \\// AUTO-GENERATED ACTOR PROXY. DO NOT EDIT BY HAND.
         \\// Generated proxy for {s}
@@ -178,9 +177,8 @@ fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_nam
         \\    
         \\    const Self = @This();
         \\
-    , .{ struct_name, struct_name, filename, struct_name, struct_name, struct_name });
+    , .{ struct_name, struct_name, file_path, struct_name, struct_name, struct_name });
 
-    // Generate methods
     var lines = std.mem.splitAny(u8, content, "\n");
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t");
