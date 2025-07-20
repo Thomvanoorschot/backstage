@@ -1,11 +1,18 @@
 const std = @import("std");
+const build_options = @import("build_options");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const actor_files = try discoverMarkedActors(allocator);
+    const scan_dirs = build_options.scan_dirs;
+    const output_dir = build_options.output_dir;
+
+    std.log.info("Scanning directories: {s}", .{scan_dirs});
+    std.log.info("Output directory: {s}", .{output_dir});
+
+    const actor_files = try discoverMarkedActors(allocator, scan_dirs);
     defer {
         for (actor_files.items) |file| {
             allocator.free(file.path);
@@ -20,7 +27,7 @@ pub fn main() !void {
     }
 
     for (actor_files.items) |actor| {
-        try generateProxy(allocator, actor.path, actor.struct_name);
+        try generateProxy(allocator, actor.path, actor.struct_name, output_dir);
     }
 }
 
@@ -29,11 +36,12 @@ const ActorInfo = struct {
     struct_name: []const u8,
 };
 
-fn discoverMarkedActors(allocator: std.mem.Allocator) !std.ArrayList(ActorInfo) {
+fn discoverMarkedActors(allocator: std.mem.Allocator, scan_dirs: []const []const u8) !std.ArrayList(ActorInfo) {
     var actor_files = std.ArrayList(ActorInfo).init(allocator);
 
-    scanDirectory(allocator, "examples/src", &actor_files) catch {};
-    scanDirectory(allocator, "src", &actor_files) catch {};
+    for (scan_dirs) |dir| {
+        scanDirectory(allocator, dir, &actor_files) catch {};
+    }
 
     return actor_files;
 }
@@ -147,14 +155,16 @@ fn extractParamNames(allocator: std.mem.Allocator, params: []const u8) ![][]cons
     return param_names.toOwnedSlice();
 }
 
-fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_name: []const u8) !void {
+fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_name: []const u8, output_dir: []const u8) !void {
     const content = try std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024);
     defer allocator.free(content);
 
     const filename = std.fs.path.basename(file_path);
     const name_without_ext = filename[0 .. filename.len - 4];
-    const output_filename = try std.fmt.allocPrint(allocator, "{s}_proxy.gen.zig", .{name_without_ext});
+    const output_filename = try std.fmt.allocPrint(allocator, "{s}/{s}_proxy.gen.zig", .{ output_dir, name_without_ext });
     defer allocator.free(output_filename);
+
+    std.fs.cwd().makePath(output_dir) catch {};
 
     const output_file = try std.fs.cwd().createFile(output_filename, .{});
     defer output_file.close();
