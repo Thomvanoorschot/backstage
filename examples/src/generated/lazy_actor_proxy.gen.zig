@@ -2,14 +2,13 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
-const ActorID = backstage.ActorID;
-const LazyActor = @import("../lazy_actor.zig").LazyActor;
+const LazyActor = @import("examples/src/lazy_actor.zig").LazyActor;
 
 pub const LazyActorProxy = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
-    underlying: *LazyActor,
-
+    underlying: LazyActor,
+    
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
@@ -30,33 +29,28 @@ pub const LazyActorProxy = struct {
     const MethodFn = *const fn (*Self, []const u8) anyerror!void;
 
     fn methodWrapper0(self: *Self, params_json: []const u8) !void {
-        const params = try std.json.parseFromSlice(
-            struct {
-                request: LazyActor.AddAmountRequest,
-            },
-            std.heap.page_allocator,
-            params_json,
-            .{}
-        );
+        const params = try std.json.parseFromSlice(struct {
+            envelope: Envelope,
+        }, std.heap.page_allocator, params_json);
         defer params.deinit();
-        try self.underlying.addAmount(params.value.request);
+        try self.underlying.receive(params.value.envelope);
     }
 
     const method_table = [_]MethodFn{
         methodWrapper0,
     };
 
-    pub fn addAmount(self: *Self, request: LazyActor.AddAmountRequest) !void {
+    pub fn receive(self: *Self, envelope: Envelope) !void {
         var params_json = std.ArrayList(u8).init(self.allocator);
         defer params_json.deinit();
-        try std.json.stringify(.{ .request = request }, .{}, params_json.writer());
+        try std.json.stringify(.{.envelope = envelope}, .{}, params_json.writer());
         const params_str = try params_json.toOwnedSlice();
         defer self.allocator.free(params_str);
         const method_call = MethodCall{
             .method_id = 0,
             .params = params_str,
         };
-        try self.ctx.send(try ActorID.initOwned(self.allocator, "LazyActor", "test_actor"), method_call);
+        try self.ctx.sendMethodCall(self.ctx.actor_id, method_call);
     }
 
     pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
