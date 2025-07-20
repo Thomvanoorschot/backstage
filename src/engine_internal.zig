@@ -3,18 +3,16 @@ const engine = @import("engine.zig");
 const envlp = @import("envelope.zig");
 const type_utils = @import("type_utils.zig");
 const actr = @import("actor.zig");
-const actr_id = @import("actor_id.zig");
 
 const Engine = engine.Engine;
 const Envelope = envlp.Envelope;
 const MessageType = envlp.MessageType;
 const ActorInterface = actr.ActorInterface;
-const ActorID = actr_id.ActorID;
 
 pub fn enqueueMessage(
     self: *Engine,
-    sender_id: ?ActorID,
-    target_id: ActorID,
+    sender_id: ?[]const u8,
+    target_id: []const u8,
     message_type: MessageType,
     message: anytype,
 ) !void {
@@ -46,9 +44,9 @@ pub fn enqueueMessage(
         const envelope = Envelope.init(sender_id, message_type, message_data);
         try a.inbox.enqueue(envelope);
         try a.notifyMessageHandler();
-        return;
+    } else {
+        std.log.warn("Actor not found: {s}", .{target_id});
     }
-    std.log.warn("Actor not found: {s}", .{target_id});
 }
 
 pub fn deinitActorByID(self: *Engine, id: []const u8) void {
@@ -61,8 +59,8 @@ pub fn deinitActorByID(self: *Engine, id: []const u8) void {
 }
 
 pub fn deinitActorByReference(self: *Engine, actor: *ActorInterface) void {
-    if (!self.registry.remove(actor.actor_id)) {
-        std.log.warn("Actor not found: {s}", .{actor.actor_id});
+    if (!self.registry.remove(actor.ctx.actor_id)) {
+        std.log.warn("Actor not found: {s}", .{actor.ctx.actor_id});
         return;
     }
     actor.deinit();

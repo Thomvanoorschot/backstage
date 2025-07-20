@@ -5,7 +5,6 @@ const eng = @import("engine.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
 const engine_internal = @import("engine_internal.zig");
-const actr_id = @import("actor_id.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -13,34 +12,34 @@ const ActorInterface = act.ActorInterface;
 const Engine = eng.Engine;
 const ActorOptions = eng.ActorOptions;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
-const ActorID = actr_id.ActorID;
-const ActorHashMap = actr_id.ActorHashMap;
 
 pub const Context = struct {
     allocator: Allocator,
+    actor_id: []const u8,
     engine: *Engine,
     actor: *ActorInterface,
     parent_actor: ?*ActorInterface,
-    child_actors: ActorHashMap(*ActorInterface),
+    child_actors: std.StringHashMap(*ActorInterface),
     timer_completions: std.ArrayList(*xev.Completion),
 
     // This is who is subscribed to this actor stored as topic:sender_id
     topic_subscriptions: std.StringHashMap(std.StringHashMap(void)),
 
     // This is who this actor is subscribed to stored as target_id:topic
-    subscribed_to_actors: std.HashMap(ActorID, std.StringHashMap(void), ActorID.HashContext, std.hash_map.default_max_load_percentage),
+    subscribed_to_actors: std.StringHashMap(std.StringHashMap(void)),
 
     const Self = @This();
-    pub fn init(allocator: Allocator, engine: *Engine, actor: *ActorInterface) !*Self {
+    pub fn init(allocator: Allocator, engine: *Engine, actor: *ActorInterface, actor_id: []const u8) !*Self {
         const self = try allocator.create(Self);
         self.* = .{
             .allocator = allocator,
             .engine = engine,
-            .child_actors = ActorHashMap(*ActorInterface).init(allocator),
+            .child_actors = std.StringHashMap(*ActorInterface).init(allocator),
             .parent_actor = null,
             .actor = actor,
+            .actor_id = actor_id,
             .topic_subscriptions = std.StringHashMap(std.StringHashMap(void)).init(allocator),
-            .subscribed_to_actors = ActorHashMap(std.StringHashMap(void)).init(allocator),
+            .subscribed_to_actors = std.StringHashMap(std.StringHashMap(void)).init(allocator),
             .timer_completions = std.ArrayList(*xev.Completion).init(allocator),
         };
         return self;
@@ -54,7 +53,7 @@ pub const Context = struct {
         while (sub_it.next()) |entry| {
             var topic_it = entry.value_ptr.keyIterator();
             while (topic_it.next()) |topic| {
-                self.engine.unsubscribeFromActorTopic(self.actor.actor_id, entry.key_ptr.*, topic.*) catch |err| {
+                self.engine.unsubscribeFromActorTopic(self.actor_id, entry.key_ptr.*, topic.*) catch |err| {
                     std.log.warn("Failed to unsubscribe from {s} topic {s}: {}", .{ entry.key_ptr.*, topic.*, err });
                 };
                 self.allocator.free(topic.*);
@@ -75,19 +74,19 @@ pub const Context = struct {
         if (self.parent_actor) |parent| {
             const could_detach = parent.ctx.detachChildActor(self.actor);
             if (!could_detach) {
-                std.log.warn("Failed to detach child actor {s} from parent {s}", .{ self.actor.actor_id, parent.actor_id });
+                std.log.warn("Failed to detach child actor {s} from parent {s}", .{ self.actor_id, parent.ctx.actor_id });
             }
         }
     }
 
     pub fn poisonPill(self: *Self) !void {
-        try self.engine.poisonPill(self.actor.actor_id);
+        try self.engine.poisonPill(self.actor_id);
     }
 
-    pub fn send(self: *const Self, target_id: ActorID, message: anytype) !void {
+    pub fn send(self: *const Self, target_id: []const u8, message: anytype) !void {
         try engine_internal.enqueueMessage(
             self.engine,
-            self.actor.actor_id,
+            self.actor_id,
             target_id,
             .send,
             message,
@@ -104,7 +103,7 @@ pub const Context = struct {
             while (it.next()) |id| {
                 try engine_internal.enqueueMessage(
                     self.engine,
-                    self.actor.actor_id,
+                    self.actor_id,
                     id.*,
                     .publish,
                     message,
@@ -129,7 +128,7 @@ pub const Context = struct {
         const owned_topic = try self.allocator.dupe(u8, topic);
         try topics.?.put(owned_topic, {});
 
-        try self.engine.subscribeToActorTopic(self.actor.actor_id, target_id, topic);
+        try self.engine.subscribeToActorTopic(self.actor_id, target_id, topic);
     }
 
     pub fn unsubscribeFromActor(self: *Self, target_id: []const u8) !void {
@@ -137,7 +136,7 @@ pub const Context = struct {
     }
 
     pub fn unsubscribeFromActorTopic(self: *Self, target_id: []const u8, topic: []const u8) !void {
-        try self.engine.unsubscribeFromActorTopic(self.actor.actor_id, target_id, topic);
+        try self.engine.unsubscribeFromActorTopic(self.actor_id, target_id, topic);
         var topics = self.subscribed_to_actors.get(target_id);
         if (topics == null) {
             return error.TargetIdDoesNotExist;
@@ -189,7 +188,7 @@ pub const Context = struct {
         self.engine.loop.timer(completion, delay_ms, userdata, callback);
     }
 
-    pub fn getActor(self: *const Self, id: ActorID) ?*ActorInterface {
+    pub fn getActor(self: *const Self, id: []const u8) ?*ActorInterface {
         return self.engine.registry.getByID(id);
     }
     pub fn spawnActor(self: *Self, comptime ActorType: type, options: ActorOptions) !*ActorType {
@@ -202,9 +201,9 @@ pub const Context = struct {
         return actor_impl;
     }
     pub fn detachChildActor(self: *Self, actor: *ActorInterface) bool {
-        return self.child_actors.remove(actor.actor_id);
+        return self.child_actors.remove(actor.ctx.actor_id);
     }
-    pub fn detachChildActorByID(self: *Self, id: ActorID) bool {
+    pub fn detachChildActorByID(self: *Self, id: []const u8) bool {
         return self.child_actors.remove(id);
     }
 

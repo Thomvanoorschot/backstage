@@ -21,5 +21,4 @@ zig-out/
 Thumbs.db 
 backstage.tar.gz
 
-generated/
 .cursor/

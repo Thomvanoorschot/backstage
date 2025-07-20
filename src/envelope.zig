@@ -1,7 +1,4 @@
 const std = @import("std");
-const actr_id = @import("actor_id.zig");
-
-const ActorID = actr_id.ActorID;
 
 pub const MessageType = enum(u8) {
     send = 0,
@@ -9,48 +6,15 @@ pub const MessageType = enum(u8) {
     subscribe = 2,
     unsubscribe = 3,
     poison_pill = 4,
-    method_call = 5,
-};
-
-pub const MethodCall = struct {
-    method_id: u32, // Changed from method_name
-    params: []const u8,
-
-    pub fn encode(self: *const MethodCall, allocator: std.mem.Allocator) ![]u8 {
-        // Format: method_id (4 bytes) + params
-        const total_len = 4 + self.params.len;
-        var result = try allocator.alloc(u8, total_len);
-
-        std.mem.writeInt(u32, result[0..4], self.method_id, .little);
-        @memcpy(result[4..], self.params);
-
-        return result;
-    }
-
-    pub fn decode(allocator: std.mem.Allocator, data: []const u8) !MethodCall {
-        if (data.len < 4) return error.InvalidFormat;
-
-        const method_id = std.mem.readInt(u32, data[0..4], .little);
-        const params = try allocator.dupe(u8, data[4..]);
-
-        return MethodCall{
-            .method_id = method_id,
-            .params = params,
-        };
-    }
-
-    pub fn deinit(self: *const MethodCall, allocator: std.mem.Allocator) void {
-        allocator.free(self.params);
-    }
 };
 
 pub const Envelope = struct {
-    sender_id: ?ActorID,
+    sender_id: ?[]const u8,
     message_type: MessageType,
     message: []const u8,
 
     pub fn init(
-        sender_id: ?ActorID,
+        sender_id: ?[]const u8,
         message_type: MessageType,
         message: []const u8,
     ) Envelope {
@@ -73,7 +37,7 @@ pub const Envelope = struct {
         const len_field_size = @sizeOf(HeaderType);
         const id_len_size = @sizeOf(u16);
 
-        const sender_id_len: usize = if (self.sender_id) |idSlice| idSlice.key.len else 0;
+        const sender_id_len: usize = if (self.sender_id) |idSlice| idSlice.len else 0;
         const envelope_type_len: usize = @sizeOf(MessageType);
         const payload_len: usize = self.message.len;
 
@@ -91,7 +55,7 @@ pub const Envelope = struct {
         idx += id_len_size;
 
         if (self.sender_id) |idSlice| {
-            @memcpy(buf[idx .. idx + sender_id_len], idSlice.key);
+            @memcpy(buf[idx .. idx + sender_id_len], idSlice);
             idx += sender_id_len;
         }
 

@@ -6,11 +6,10 @@ const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
 
-// @generate-proxy
-pub const LazyActor = struct {
+const LazyActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
-    amount: u64 = 0,
+    hello_world_received: bool = false,
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
@@ -21,30 +20,30 @@ pub const LazyActor = struct {
         };
         return self;
     }
-    pub fn deinit(_: *Self) !void {}
 
-    pub const AddAmountRequest = struct {
-        amount: u64,
-    };
-
-    pub fn addAmount(self: *Self, request: AddAmountRequest) !void {
-        self.amount += request.amount;
+    pub fn receive(self: *Self, envelope: Envelope) !void {
+        if (std.mem.eql(u8, envelope.message, "Hello, world!")) {
+            self.hello_world_received = true;
+            std.log.info("{s}", .{envelope.message});
+        }
     }
+
+    pub fn deinit(_: *Self) !void {}
 };
 
-// test "Lazy actor" {
-//     testing.log_level = .info;
-//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-//     defer _ = gpa.deinit();
-//     const allocator = gpa.allocator();
+test "Lazy actor" {
+    testing.log_level = .info;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-//     var engine = try backstage.Engine.init(allocator);
-//     defer engine.deinit();
+    var engine = try backstage.Engine.init(allocator);
+    defer engine.deinit();
 
-//     const test_actor = try engine.spawnActor(LazyActor, .{
-//         .id = "test_actor",
-//     });
-//     try test_actor.addAmount(10);
-//     try engine.loop.run(.once);
-//     try testing.expect(test_actor.amount == 10);
-// }
+    const test_actor = try engine.spawnActor(LazyActor, .{
+        .id = "test_actor",
+    });
+    try engine.send("test_actor", "Hello, world!");
+    try engine.loop.run(.once);
+    try testing.expect(test_actor.hello_world_received);
+}

@@ -7,7 +7,6 @@ const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
 const ispct = @import("inspector/inspector.zig");
 const engine_internal = @import("engine_internal.zig");
-const actr_id = @import("actor_id.zig");
 
 const Allocator = std.mem.Allocator;
 const Inbox = inbox.Inbox;
@@ -17,7 +16,6 @@ const Envelope = envlp.Envelope;
 const ActorOptions = eng.ActorOptions;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
 const Inspector = ispct.Inspector;
-const ActorID = actr_id.ActorID;
 
 pub const ActorState = enum {
     active,
@@ -25,16 +23,9 @@ pub const ActorState = enum {
     closed,
 };
 
-const VTable = struct {
-    deinit: *const fn (*anyopaque) anyerror!void,
-    dispatch_method: *const fn (*anyopaque, envlp.MethodCall) anyerror!void,
-};
-
 pub const ActorInterface = struct {
     allocator: Allocator,
-    ptr: *anyopaque,
-    vtable: *const VTable,
-    actor_id: ActorID,
+    impl: *anyopaque,
     state: ActorState,
     inbox: *Inbox,
     ctx: *Context,
@@ -43,7 +34,8 @@ pub const ActorInterface = struct {
     wakeup_cancel_completion: ?xev.Completion = null,
     arena_state: std.heap.ArenaAllocator,
     inspector: ?*Inspector,
-
+    deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
+    receiveFnPtr: *const fn (ptr: *anyopaque, envelope: Envelope) anyerror!void,
     actor_type_name: []const u8,
 
     const Self = @This();
@@ -58,16 +50,13 @@ pub const ActorInterface = struct {
         const self = try allocator.create(Self);
         self.* = .{
             .allocator = allocator,
-            .ptr = try ActorType.init(self.ctx, self.arena_state.allocator()),
-            .vtable = &.{
-                .deinit = makeTypeErasedDeinitFn(ActorType),
-                .dispatch_method = makeTypeErasedDispatchFn(ActorType),
-            },
-            .actor_id = options.id,
             .state = .active,
             .arena_state = std.heap.ArenaAllocator.init(allocator),
+            .deinitFnPtr = makeTypeErasedDeinitFn(ActorType),
+            .receiveFnPtr = makeTypeErasedReceiveFn(ActorType),
             .inbox = try Inbox.init(self.allocator, options.capacity),
-            .ctx = try Context.init(self.arena_state.allocator(), engine, self),
+            .ctx = try Context.init(self.arena_state.allocator(), engine, self, options.id),
+            .impl = try ActorType.init(self.ctx, self.arena_state.allocator()),
             .inspector = inspector,
             .actor_type_name = type_utils.getTypeName(ActorType),
             .wakeup = try xev.Async.init(),
@@ -134,16 +123,8 @@ pub const ActorInterface = struct {
             }
 
             switch (envelope.message_type) {
-                .method_call => {
-                    const method_call = try envlp.MethodCall.decode(self.allocator, envelope.message);
-                    defer method_call.deinit(self.allocator);
-
-                    self.vtable.dispatch_method(self.ptr, method_call) catch |err| {
-                        std.log.err("Tried to dispatch method call but failed: {s}", .{@errorName(err)});
-                    };
-                },
                 .send, .publish => {
-                    self.receiveFnPtr(self.ptr, envelope) catch |err| {
+                    self.receiveFnPtr(self.impl, envelope) catch |err| {
                         std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
                     };
                 },
@@ -247,13 +228,11 @@ fn hasDeinitMethod(comptime T: type) bool {
     return false;
 }
 
-fn makeTypeErasedDispatchFn(comptime ActorType: type) fn (*anyopaque, envlp.MethodCall) anyerror!void {
+fn makeTypeErasedReceiveFn(comptime ActorType: type) fn (*anyopaque, Envelope) anyerror!void {
     return struct {
-        fn wrapper(ptr: *anyopaque, method_call: envlp.MethodCall) anyerror!void {
+        fn wrapper(ptr: *anyopaque, envelope: Envelope) anyerror!void {
             const self = @as(*ActorType, @ptrCast(@alignCast(ptr)));
-
-            // Just call the dispatchMethod on the actor (which is the proxy)
-            try self.dispatchMethod(method_call);
+            try self.receive(envelope);
         }
     }.wrapper;
 }
