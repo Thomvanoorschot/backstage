@@ -170,7 +170,6 @@ fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_nam
     defer output_file.close();
     const writer = output_file.writer();
 
-    // Parse methods
     var regular_methods = std.ArrayList(MethodInfo).init(allocator);
     defer regular_methods.deinit();
 
@@ -188,11 +187,23 @@ fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_nam
         }
     }
 
-    // Generate the proxy that IS the actor
-    try generateActorProxy(allocator, writer, struct_name, regular_methods.items, file_path);
+    try generateActorProxy(allocator, writer, struct_name, regular_methods.items, file_path, output_dir);
 }
 
-fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name: []const u8, methods: []const MethodInfo, file_path: []const u8) !void {
+fn calculateRelativePath(allocator: std.mem.Allocator, from_dir: []const u8, to_file: []const u8) ![]u8 {
+    const from_normalized = try std.fs.path.resolve(allocator, &[_][]const u8{from_dir});
+    defer allocator.free(from_normalized);
+
+    const to_normalized = try std.fs.path.resolve(allocator, &[_][]const u8{to_file});
+    defer allocator.free(to_normalized);
+
+    return std.fs.path.relative(allocator, from_normalized, to_normalized);
+}
+
+fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name: []const u8, methods: []const MethodInfo, file_path: []const u8, output_dir: []const u8) !void {
+    const relative_import = try calculateRelativePath(allocator, output_dir, file_path);
+    defer allocator.free(relative_import);
+
     try writer.print(
         \\const std = @import("std");
         \\const backstage = @import("backstage");
@@ -223,7 +234,7 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
         \\        self.allocator.destroy(self);
         \\    }}
         \\
-    , .{ struct_name, file_path, struct_name, struct_name, struct_name, struct_name });
+    , .{ struct_name, relative_import, struct_name, struct_name, struct_name, struct_name });
 
     try generateMethodTable(allocator, writer, methods);
 

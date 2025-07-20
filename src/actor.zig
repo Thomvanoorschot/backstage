@@ -35,7 +35,7 @@ pub const ActorInterface = struct {
     arena_state: std.heap.ArenaAllocator,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
-    receiveFnPtr: *const fn (ptr: *anyopaque, envelope: Envelope) anyerror!void,
+    dispatchFnPtr: *const fn (ptr: *anyopaque, method_call: envlp.MethodCall) anyerror!void,
     actor_type_name: []const u8,
 
     const Self = @This();
@@ -53,7 +53,7 @@ pub const ActorInterface = struct {
             .state = .active,
             .arena_state = std.heap.ArenaAllocator.init(allocator),
             .deinitFnPtr = makeTypeErasedDeinitFn(ActorType),
-            .receiveFnPtr = makeTypeErasedReceiveFn(ActorType),
+            .dispatchFnPtr = makeTypeErasedDispatchFn(ActorType),
             .inbox = try Inbox.init(self.allocator, options.capacity),
             .ctx = try Context.init(self.arena_state.allocator(), engine, self, options.id),
             .impl = try ActorType.init(self.ctx, self.arena_state.allocator()),
@@ -228,11 +228,12 @@ fn hasDeinitMethod(comptime T: type) bool {
     return false;
 }
 
-fn makeTypeErasedReceiveFn(comptime ActorType: type) fn (*anyopaque, Envelope) anyerror!void {
+fn makeTypeErasedDispatchFn(comptime ActorType: type) fn (*anyopaque, envlp.MethodCall) anyerror!void {
     return struct {
-        fn wrapper(ptr: *anyopaque, envelope: Envelope) anyerror!void {
+        fn wrapper(ptr: *anyopaque, method_call: envlp.MethodCall) anyerror!void {
             const self = @as(*ActorType, @ptrCast(@alignCast(ptr)));
-            try self.receive(envelope);
+
+            try self.dispatchMethod(method_call);
         }
     }.wrapper;
 }

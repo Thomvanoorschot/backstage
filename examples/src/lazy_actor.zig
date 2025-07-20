@@ -5,12 +5,13 @@ const testing = std.testing;
 const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
+const LazyActorProxy = @import("generated/lazy_actor_proxy.gen.zig").LazyActorProxy;
 
 // @generate-proxy
 const LazyActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
-    hello_world_received: bool = false,
+    amount: u64 = 0,
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
@@ -22,11 +23,8 @@ const LazyActor = struct {
         return self;
     }
 
-    pub fn receive(self: *Self, envelope: Envelope) !void {
-        if (std.mem.eql(u8, envelope.message, "Hello, world!")) {
-            self.hello_world_received = true;
-            std.log.info("{s}", .{envelope.message});
-        }
+    pub fn addAmount(self: *Self, amount: u64) !void {
+        self.amount += amount;
     }
 
     pub fn deinit(_: *Self) !void {}
@@ -41,10 +39,10 @@ test "Lazy actor" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.spawnActor(LazyActor, .{
+    const test_actor = try engine.spawnActor(LazyActorProxy, .{
         .id = "test_actor",
     });
-    try engine.send("test_actor", "Hello, world!");
+    try engine.send(test_actor.actor_id, "Hello, world!");
     try engine.loop.run(.once);
-    try testing.expect(test_actor.hello_world_received);
+    try testing.expect(test_actor.amount == 10);
 }

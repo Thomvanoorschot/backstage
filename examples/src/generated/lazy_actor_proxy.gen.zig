@@ -2,7 +2,7 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
-const LazyActor = @import("examples/src/lazy_actor.zig").LazyActor;
+const LazyActor = @import("../lazy_actor.zig").LazyActor;
 
 pub const LazyActorProxy = struct {
     ctx: *Context,
@@ -30,20 +30,20 @@ pub const LazyActorProxy = struct {
 
     fn methodWrapper0(self: *Self, params_json: []const u8) !void {
         const params = try std.json.parseFromSlice(struct {
-            envelope: Envelope,
+            amount: u64,
         }, std.heap.page_allocator, params_json);
         defer params.deinit();
-        try self.underlying.receive(params.value.envelope);
+        try self.underlying.addAmount(params.value.amount);
     }
 
     const method_table = [_]MethodFn{
         methodWrapper0,
     };
 
-    pub fn receive(self: *Self, envelope: Envelope) !void {
+    pub fn addAmount(self: *Self, amount: u64) !void {
         var params_json = std.ArrayList(u8).init(self.allocator);
         defer params_json.deinit();
-        try std.json.stringify(.{.envelope = envelope}, .{}, params_json.writer());
+        try std.json.stringify(.{.amount = amount}, .{}, params_json.writer());
         const params_str = try params_json.toOwnedSlice();
         defer self.allocator.free(params_str);
         const method_call = MethodCall{

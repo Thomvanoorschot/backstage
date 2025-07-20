@@ -6,6 +6,39 @@ pub const MessageType = enum(u8) {
     subscribe = 2,
     unsubscribe = 3,
     poison_pill = 4,
+    method_call = 5,
+};
+
+pub const MethodCall = struct {
+    method_id: u32, // Changed from method_name
+    params: []const u8,
+
+    pub fn encode(self: *const MethodCall, allocator: std.mem.Allocator) ![]u8 {
+        // Format: method_id (4 bytes) + params
+        const total_len = 4 + self.params.len;
+        var result = try allocator.alloc(u8, total_len);
+
+        std.mem.writeInt(u32, result[0..4], self.method_id, .little);
+        @memcpy(result[4..], self.params);
+
+        return result;
+    }
+
+    pub fn decode(allocator: std.mem.Allocator, data: []const u8) !MethodCall {
+        if (data.len < 4) return error.InvalidFormat;
+
+        const method_id = std.mem.readInt(u32, data[0..4], .little);
+        const params = try allocator.dupe(u8, data[4..]);
+
+        return MethodCall{
+            .method_id = method_id,
+            .params = params,
+        };
+    }
+
+    pub fn deinit(self: *const MethodCall, allocator: std.mem.Allocator) void {
+        allocator.free(self.params);
+    }
 };
 
 pub const Envelope = struct {
