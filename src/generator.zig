@@ -283,7 +283,7 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
             }
         }
 
-        try writer.writeAll("        }, std.heap.page_allocator, params_json);\n");
+        try writer.writeAll("        }, std.heap.page_allocator, params_json, .{});\n");
         try writer.writeAll("        defer params.deinit();\n");
 
         try writer.print("        try self.underlying.{s}(", .{method.name});
@@ -341,7 +341,7 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
         \\            .method_id = {d},
         \\            .params = params_str,
         \\        }};
-        \\        try self.ctx.sendMethodCall(self.ctx.actor_id, method_call);
+        \\        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
         \\    }}
         \\
         \\

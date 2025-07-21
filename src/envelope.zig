@@ -10,7 +10,7 @@ pub const MessageType = enum(u8) {
 };
 
 pub const MethodCall = struct {
-    method_id: u32, // Changed from method_name
+    method_id: u32,
     params: []const u8,
 
     pub fn encode(self: *const MethodCall, allocator: std.mem.Allocator) ![]u8 {

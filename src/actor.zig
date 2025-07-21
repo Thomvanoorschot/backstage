@@ -125,10 +125,12 @@ pub const ActorInterface = struct {
             switch (envelope.message_type) {
                 .method_call => {
                     std.log.info("Received method call", .{});
-                    self.dispatchFnPtr(self.impl, .{
-                        .method_id = 0,
-                        .params = "{\"amount\": 10}",
-                    }) catch |err| {
+                    const method_call = envlp.MethodCall.decode(self.allocator, envelope.message) catch |err| {
+                        std.log.err("Tried to decode method call but failed: {s}", .{@errorName(err)});
+                        return .rearm;
+                    };
+                    defer method_call.deinit(self.allocator);
+                    self.dispatchFnPtr(self.impl, method_call) catch |err| {
                         std.log.err("Tried to dispatch method call but failed: {s}", .{@errorName(err)});
                     };
                 },

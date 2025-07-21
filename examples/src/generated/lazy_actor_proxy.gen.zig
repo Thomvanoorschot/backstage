@@ -29,15 +29,9 @@ pub const LazyActorProxy = struct {
     const MethodFn = *const fn (*Self, []const u8) anyerror!void;
 
     fn methodWrapper0(self: *Self, params_json: []const u8) !void {
-        std.log.info("methodWrapper0", .{});
-        const params = try std.json.parseFromSlice(
-            struct {
-                amount: u64,
-            },
-            std.heap.page_allocator,
-            params_json,
-            .{}
-        );
+        const params = try std.json.parseFromSlice(struct {
+            amount: u64,
+        }, std.heap.page_allocator, params_json, .{});
         defer params.deinit();
         try self.underlying.addAmount(params.value.amount);
     }
@@ -52,13 +46,11 @@ pub const LazyActorProxy = struct {
         try std.json.stringify(.{ .amount = amount }, .{}, params_json.writer());
         const params_str = try params_json.toOwnedSlice();
         defer self.allocator.free(params_str);
-        // const method_call = MethodCall{
-        //     .method_id = 0,
-        //     .params = params_str,
-        // };
-        // try self.ctx.sendMethodCall(self.ctx.actor_id, method_call);
-        try self.ctx.dispatchMethodCall(self.ctx.actor_id, params_str);
-        
+        const method_call = MethodCall{
+            .method_id = 0,
+            .params = params_str,
+        };
+        try self.ctx.dispatchMethodCall(self.ctx.actor_id, try method_call.encode(self.allocator));
     }
 
     pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
