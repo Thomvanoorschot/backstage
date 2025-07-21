@@ -41,7 +41,11 @@ pub fn enqueueMessage(
         };
         defer if (@typeInfo(T) == .@"struct") self.allocator.free(message_data);
 
-        const envelope = Envelope.init(sender_id, message_type, message_data);
+        const envelope = Envelope.init(
+            sender_id,
+            message_type,
+            message_data,
+        );
         try a.inbox.enqueue(envelope);
         try a.notifyMessageHandler();
     } else {

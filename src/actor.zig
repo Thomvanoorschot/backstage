@@ -123,10 +123,19 @@ pub const ActorInterface = struct {
             }
 
             switch (envelope.message_type) {
-                .send, .publish => {
-                    self.receiveFnPtr(self.impl, envelope) catch |err| {
-                        std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
+                .method_call => {
+                    std.log.info("Received method call", .{});
+                    self.dispatchFnPtr(self.impl, .{
+                        .method_id = 0,
+                        .params = "{\"amount\": 10}",
+                    }) catch |err| {
+                        std.log.err("Tried to dispatch method call but failed: {s}", .{@errorName(err)});
                     };
+                },
+                .send, .publish => {
+                    // self.receiveFnPtr(self.impl, envelope) catch |err| {
+                    //     std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
+                    // };
                 },
                 .subscribe => {
                     self.addSubscriber(envelope) catch |err| {

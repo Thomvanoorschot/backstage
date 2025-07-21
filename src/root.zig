@@ -5,3 +5,4 @@ pub const ActorInterface = @import("actor.zig").ActorInterface;
 pub const Actor = @import("actor.zig");
 pub const Envelope = @import("envelope.zig").Envelope;
 pub const Registry = @import("registry.zig").Registry;
+pub const MethodCall = @import("envelope.zig").MethodCall;

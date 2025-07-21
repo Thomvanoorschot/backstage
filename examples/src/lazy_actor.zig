@@ -8,7 +8,7 @@ const Envelope = backstage.Envelope;
 const LazyActorProxy = @import("generated/lazy_actor_proxy.gen.zig").LazyActorProxy;
 
 // @generate-proxy
-const LazyActor = struct {
+pub const LazyActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
     amount: u64 = 0,
@@ -42,7 +42,7 @@ test "Lazy actor" {
     const test_actor = try engine.spawnActor(LazyActorProxy, .{
         .id = "test_actor",
     });
-    try engine.send(test_actor.actor_id, "Hello, world!");
+    try test_actor.addAmount(10);
     try engine.loop.run(.once);
-    try testing.expect(test_actor.amount == 10);
+    try testing.expect(test_actor.underlying.amount == 10);
 }

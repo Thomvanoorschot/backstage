@@ -92,6 +92,15 @@ pub const Context = struct {
             message,
         );
     }
+    pub fn dispatchMethodCall(self: *const Self, target_id: []const u8, message: anytype) !void {
+        try engine_internal.enqueueMessage(
+            self.engine,
+            self.actor_id,
+            target_id,
+            .method_call,
+            message,
+        );
+    }
 
     pub fn publish(self: *const Self, message: anytype) !void {
         try self.publishToTopic("default", message);

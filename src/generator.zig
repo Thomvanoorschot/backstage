@@ -214,7 +214,7 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
         \\pub const {s}Proxy = struct {{
         \\    ctx: *Context,
         \\    allocator: std.mem.Allocator,
-        \\    underlying: {s},
+        \\    underlying: *{s},
         \\    
         \\    const Self = @This();
         \\
