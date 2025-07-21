@@ -124,7 +124,6 @@ pub const ActorInterface = struct {
 
             switch (envelope.message_type) {
                 .method_call => {
-                    std.log.info("Received method call", .{});
                     const method_call = envlp.MethodCall.decode(self.allocator, envelope.message) catch |err| {
                         std.log.err("Tried to decode method call but failed: {s}", .{@errorName(err)});
                         return .rearm;

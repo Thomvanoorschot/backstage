@@ -155,6 +155,50 @@ fn extractParamNames(allocator: std.mem.Allocator, params: []const u8) ![][]cons
     return param_names.toOwnedSlice();
 }
 
+fn isBuiltinType(type_name: []const u8) bool {
+    const builtin_types = [_][]const u8{
+        "u8",             "u16",       "u32",     "u64",      "u128",
+        "i8",             "i16",       "i32",     "i64",      "i128",
+        "f16",            "f32",       "f64",     "f128",     "bool",
+        "void",           "anyerror",  "usize",   "isize",    "comptime_int",
+        "comptime_float", "type",      "anytype", "noreturn", "[]const u8",
+        "[]u8",           "*const u8", "*u8",
+    };
+
+    // Check if it's a basic builtin type
+    for (builtin_types) |builtin| {
+        if (std.mem.eql(u8, type_name, builtin)) {
+            return true;
+        }
+    }
+
+    // Check for slice types []T or [N]T
+    if (std.mem.startsWith(u8, type_name, "[]") or
+        std.mem.startsWith(u8, type_name, "["))
+    {
+        return true;
+    }
+
+    // Check for pointer types *T
+    if (std.mem.startsWith(u8, type_name, "*")) {
+        return true;
+    }
+
+    // Check for optional types ?T
+    if (std.mem.startsWith(u8, type_name, "?")) {
+        return true;
+    }
+
+    return false;
+}
+
+fn prefixTypeIfNeeded(allocator: std.mem.Allocator, type_name: []const u8, struct_name: []const u8) ![]u8 {
+    if (isBuiltinType(type_name)) {
+        return try allocator.dupe(u8, type_name);
+    }
+    return try std.fmt.allocPrint(allocator, "{s}.{s}", .{ struct_name, type_name });
+}
+
 fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_name: []const u8, output_dir: []const u8) !void {
     const content = try std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024);
     defer allocator.free(content);
@@ -236,10 +280,10 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
         \\
     , .{ struct_name, relative_import, struct_name, struct_name, struct_name, struct_name });
 
-    try generateMethodTable(allocator, writer, methods);
+    try generateMethodTable(allocator, writer, methods, struct_name);
 
     for (methods, 0..) |method, i| {
-        try generateProxyMethod(allocator, writer, method, i);
+        try generateProxyMethod(allocator, writer, method, i, struct_name);
     }
 
     try generateDispatchFunction(writer, methods.len);
@@ -247,11 +291,11 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
     try writer.writeAll("};\n");
 }
 
-fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: []const MethodInfo) !void {
+fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: []const MethodInfo, struct_name: []const u8) !void {
     try writer.print("    const MethodFn = *const fn (*Self, []const u8) anyerror!void;\n\n", .{});
 
     for (methods, 0..) |method, i| {
-        try generateMethodWrapper(allocator, writer, method, i);
+        try generateMethodWrapper(allocator, writer, method, i, struct_name);
     }
 
     try writer.print("    const method_table = [_]MethodFn{{\n", .{});
@@ -261,7 +305,7 @@ fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: [
     try writer.writeAll("    };\n\n");
 }
 
-fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: MethodInfo, index: usize) !void {
+fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: MethodInfo, index: usize, struct_name: []const u8) !void {
     try writer.print("    fn methodWrapper{d}(self: *Self, params_json: []const u8) !void {{\n", .{index});
 
     const param_names = try extractParamNames(allocator, method.params);
@@ -279,7 +323,9 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
             if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
                 const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
                 const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
-                try writer.print("            {s}: {s},\n", .{ param_name, param_type });
+                const prefixed_type = try prefixTypeIfNeeded(allocator, param_type, struct_name);
+                defer allocator.free(prefixed_type);
+                try writer.print("            {s}: {s},\n", .{ param_name, prefixed_type });
             }
         }
 
@@ -300,7 +346,7 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
     try writer.writeAll("    }\n\n");
 }
 
-fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_info: MethodInfo, method_index: usize) !void {
+fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_info: MethodInfo, method_index: usize, struct_name: []const u8) !void {
     const param_names = try extractParamNames(allocator, method_info.params);
     defer allocator.free(param_names);
 
@@ -313,7 +359,15 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
             if (trimmed.len == 0) continue;
             if (std.mem.indexOf(u8, trimmed, "self")) |_| continue;
 
-            try writer.print(", {s}", .{trimmed});
+            if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
+                const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
+                const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
+                const prefixed_type = try prefixTypeIfNeeded(allocator, param_type, struct_name);
+                defer allocator.free(prefixed_type);
+                try writer.print(", {s}: {s}", .{ param_name, prefixed_type });
+            } else {
+                try writer.print(", {s}", .{trimmed});
+            }
         }
     }
 
