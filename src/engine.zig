@@ -19,11 +19,6 @@ const Envelope = envlp.Envelope;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
 const Inspector = ispct.Inspector;
 
-pub const ActorOptions = struct {
-    id: []const u8,
-    capacity: usize = 1024,
-};
-
 pub const Engine = struct {
     registry: Registry,
     allocator: Allocator,
@@ -31,15 +26,14 @@ pub const Engine = struct {
     inspector: ?*Inspector = null,
     const Self = @This();
     pub fn init(allocator: Allocator) !Self {
-        var self = Self{
+        const registry = Registry.init(allocator);
+        const inspector = if (build_options.enable_inspector) try Inspector.init(allocator) else null;
+        return Self{
             .allocator = allocator,
-            .registry = Registry.init(allocator),
             .loop = try xev.Loop.init(.{}),
+            .registry = registry,
+            .inspector = inspector,
         };
-        if (build_options.enable_inspector) {
-            self.inspector = try Inspector.init(allocator);
-        }
-        return self;
     }
 
     pub fn run(self: *Self) !void {
@@ -64,8 +58,8 @@ pub const Engine = struct {
         self.registry.deinit();
     }
 
-    pub fn spawnActor(self: *Self, comptime ActorType: type, options: ActorOptions) !*ActorType {
-        const actor = self.registry.getByID(options.id);
+    pub fn getActor(self: *Self, comptime ActorType: type, id: []const u8) !*ActorType {
+        const actor = self.registry.getByID(id);
         if (actor) |a| {
             return unsafeAnyOpaqueCast(ActorType, a.impl);
         }
@@ -73,14 +67,14 @@ pub const Engine = struct {
             self.allocator,
             self,
             ActorType,
-            options,
+            id,
             self.inspector,
         );
         errdefer actor_interface.deinitFnPtr(actor_interface.impl) catch |err| {
             std.log.err("Failed to deinit actor: {s}", .{@errorName(err)});
         };
 
-        try self.registry.add(options.id, actor_interface);
+        try self.registry.add(id, actor_interface);
         if (self.inspector != null) {
             self.inspector.?.actorSpawned(actor_interface) catch |err| {
                 std.log.warn("Tried to update inspector but failed: {s}", .{@errorName(err)});

@@ -44,7 +44,7 @@ pub const ActorInterface = struct {
         allocator: Allocator,
         engine: *Engine,
         comptime ActorType: type,
-        options: ActorOptions,
+        id: []const u8,
         inspector: ?*Inspector,
     ) !*Self {
         const self = try allocator.create(Self);
@@ -54,8 +54,8 @@ pub const ActorInterface = struct {
             .arena_state = std.heap.ArenaAllocator.init(allocator),
             .deinitFnPtr = makeTypeErasedDeinitFn(ActorType),
             .dispatchFnPtr = makeTypeErasedDispatchFn(ActorType),
-            .inbox = try Inbox.init(self.allocator, options.capacity),
-            .ctx = try Context.init(self.arena_state.allocator(), engine, self, options.id),
+            .inbox = try Inbox.init(self.allocator, 1024),
+            .ctx = try Context.init(self.arena_state.allocator(), engine, self, id),
             .impl = try ActorType.init(self.ctx, self.arena_state.allocator()),
             .inspector = inspector,
             .actor_type_name = type_utils.getTypeName(ActorType),

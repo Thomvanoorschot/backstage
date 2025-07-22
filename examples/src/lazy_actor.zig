@@ -48,9 +48,7 @@ test "Lazy actor with simple parameter method call" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.spawnActor(LazyActorProxy, .{
-        .id = "test_actor",
-    });
+    const test_actor = try engine.getActor(LazyActorProxy, "test_actor");
     try test_actor.addAmount(10);
     try engine.loop.run(.once);
     try testing.expect(test_actor.underlying.amount == 10);
@@ -65,9 +63,7 @@ test "Lazy actor with struct parameter method call" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.spawnActor(LazyActorProxy, .{
-        .id = "test_actor",
-    });
+    const test_actor = try engine.getActor(LazyActorProxy, "test_actor");
     try test_actor.addAmountWithMultiplier(.{
         .amount = 10,
         .multiplier = 2,
