@@ -137,16 +137,28 @@ fn extractParamNames(allocator: std.mem.Allocator, params: []const u8) ![][]cons
     defer param_names.deinit();
 
     var param_split = std.mem.splitAny(u8, params, ",");
+    var unused_count: u32 = 1;
+    var param_index: u32 = 0;
+
     while (param_split.next()) |param| {
         const trimmed = std.mem.trim(u8, param, " \t");
         if (trimmed.len == 0) continue;
 
         if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
-            const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
-            if (!std.mem.eql(u8, param_name, "self")) {
-                const display_name = if (std.mem.eql(u8, param_name, "_")) "unused_param" else param_name;
-                try param_names.append(display_name);
+            if (param_index == 0) {
+                param_index += 1;
+                continue;
             }
+
+            const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
+            if (std.mem.eql(u8, param_name, "_")) {
+                const display_name = try std.fmt.allocPrint(allocator, "unused_param{d}", .{unused_count});
+                try param_names.append(display_name);
+                unused_count += 1;
+            } else {
+                try param_names.append(param_name);
+            }
+            param_index += 1;
         }
     }
 
@@ -569,25 +581,46 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
     try writer.print("    fn methodWrapper{d}(self: *Self, params_json: []const u8) !void {{\n", .{index});
 
     const param_names = try extractParamNames(allocator, method.params);
-    defer allocator.free(param_names);
+    defer {
+        for (param_names) |name| {
+            if (std.mem.startsWith(u8, name, "unused_param")) {
+                allocator.free(name);
+            }
+        }
+        allocator.free(param_names);
+    }
 
     if (param_names.len > 0) {
         try writer.writeAll("        const params = try std.json.parseFromSlice(struct {\n");
 
         var param_split = std.mem.splitAny(u8, method.params, ",");
+        var unused_count: u32 = 1;
+        var param_index: u32 = 0;
+
         while (param_split.next()) |param| {
             const trimmed = std.mem.trim(u8, param, " \t");
             if (trimmed.len == 0) continue;
-            if (std.mem.indexOf(u8, trimmed, "self")) |_| continue;
 
             if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
+                if (param_index == 0) {
+                    param_index += 1;
+                    continue;
+                }
+
                 const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
                 const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
                 const resolved_type = try resolveTypeForProxy(allocator, param_type, file_content, struct_name, types_to_import);
                 defer allocator.free(resolved_type);
 
-                const display_param_name = if (std.mem.eql(u8, param_name, "_")) "unused_param" else param_name;
+                const display_param_name = if (std.mem.eql(u8, param_name, "_")) blk: {
+                    const name = try std.fmt.allocPrint(allocator, "unused_param{d}", .{unused_count});
+                    unused_count += 1;
+                    break :blk name;
+                } else param_name;
+
+                defer if (std.mem.startsWith(u8, display_param_name, "unused_param")) allocator.free(display_param_name);
                 try writer.print("            {s}: {s},\n", .{ display_param_name, resolved_type });
+                param_index += 1;
             }
         }
 
@@ -610,25 +643,46 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
 
 fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_info: MethodInfo, method_index: usize, struct_name: []const u8, file_content: []const u8, types_to_import: *std.StringHashMap(void)) !void {
     const param_names = try extractParamNames(allocator, method_info.params);
-    defer allocator.free(param_names);
+    defer {
+        for (param_names) |name| {
+            if (std.mem.startsWith(u8, name, "unused_param")) {
+                allocator.free(name);
+            }
+        }
+        allocator.free(param_names);
+    }
 
     try writer.print("    pub fn {s}(self: *Self", .{method_info.name});
 
     if (method_info.params.len > 0) {
         var param_split = std.mem.splitAny(u8, method_info.params, ",");
+        var unused_count: u32 = 1;
+        var param_index: u32 = 0;
+
         while (param_split.next()) |param| {
             const trimmed = std.mem.trim(u8, param, " \t");
             if (trimmed.len == 0) continue;
-            if (std.mem.indexOf(u8, trimmed, "self")) |_| continue;
 
             if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
+                if (param_index == 0) {
+                    param_index += 1;
+                    continue;
+                }
+
                 const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
                 const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
                 const resolved_type = try resolveTypeForProxy(allocator, param_type, file_content, struct_name, types_to_import);
                 defer allocator.free(resolved_type);
 
-                const display_param_name = if (std.mem.eql(u8, param_name, "_")) "unused_param" else param_name;
+                const display_param_name = if (std.mem.eql(u8, param_name, "_")) blk: {
+                    const name = try std.fmt.allocPrint(allocator, "unused_param{d}", .{unused_count});
+                    unused_count += 1;
+                    break :blk name;
+                } else param_name;
+
+                defer if (std.mem.startsWith(u8, display_param_name, "unused_param")) allocator.free(display_param_name);
                 try writer.print(", {s}: {s}", .{ display_param_name, resolved_type });
+                param_index += 1;
             } else {
                 try writer.print(", {s}", .{trimmed});
             }

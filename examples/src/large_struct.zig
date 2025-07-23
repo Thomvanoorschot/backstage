@@ -23,7 +23,8 @@ pub const LargeStructActor = struct {
         return self;
     }
 
-    pub fn handleLargeStruct(self: *Self, _: LargeStruct) !void {
+    pub fn handleLargeStruct(self: *Self, ls: LargeStruct) !void {
+        _ = ls;
         self.message_received = true;
     }
 

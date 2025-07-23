@@ -2,19 +2,18 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
-const LargeStructActor = @import("../large_struct.zig").LargeStructActor;
-const LargeStruct = @import("../large_struct.zig").LargeStruct;
+const DiscaredVariableActor = @import("../discared_variable.zig").DiscaredVariableActor;
 
-pub const LargeStructActorProxy = struct {
+pub const DiscaredVariableActorProxy = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
-    underlying: *LargeStructActor,
+    underlying: *DiscaredVariableActor,
     
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
         const self = try allocator.create(Self);
-        const underlying = try LargeStructActor.init(ctx, allocator);
+        const underlying = try DiscaredVariableActor.init(ctx, allocator);
         self.* = .{
             .ctx = ctx,
             .allocator = allocator,
@@ -31,20 +30,22 @@ pub const LargeStructActorProxy = struct {
 
     fn methodWrapper0(self: *Self, params_json: []const u8) !void {
         const params = try std.json.parseFromSlice(struct {
-            ls: LargeStruct,
+            unused_param1: []const u8,
+            unused_param2: u64,
+            used_param: u64,
         }, std.heap.page_allocator, params_json, .{});
         defer params.deinit();
-        try self.underlying.handleLargeStruct(params.value.ls);
+        try self.underlying.handleDiscaredVariable(params.value.unused_param1, params.value.unused_param2, params.value.used_param);
     }
 
     const method_table = [_]MethodFn{
         methodWrapper0,
     };
 
-    pub fn handleLargeStruct(self: *Self, ls: LargeStruct) !void {
+    pub fn handleDiscaredVariable(self: *Self, unused_param1: []const u8, unused_param2: u64, used_param: u64) !void {
         var params_json = std.ArrayList(u8).init(self.allocator);
         defer params_json.deinit();
-        try std.json.stringify(.{.ls = ls}, .{}, params_json.writer());
+        try std.json.stringify(.{.unused_param1 = unused_param1, .unused_param2 = unused_param2, .used_param = used_param}, .{}, params_json.writer());
         const params_str = try params_json.toOwnedSlice();
         defer self.allocator.free(params_str);
         const method_call = MethodCall{
