@@ -5,10 +5,12 @@ const testing = std.testing;
 const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
-const DiscaredVariableActorProxy = @import("generated/discared_variable_actor_proxy.gen.zig").DiscaredVariableActorProxy;
+const ImportedVariableActorProxy = @import("generated/imported_variable_actor_proxy.gen.zig").ImportedVariableActorProxy;
+const FirstExportedVariable = @import("discared_variable.zig").FirstExportedVariable;
+const dv = @import("discared_variable.zig");
 
 // @generate-proxy
-pub const DiscaredVariableActor = struct {
+pub const ImportedVariableActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
     const Self = @This();
@@ -22,23 +24,14 @@ pub const DiscaredVariableActor = struct {
         return self;
     }
 
-    pub fn handleDiscaredVariable(_: *Self, _: []const u8, _: u64, used_param: u64) !void {
-        std.log.info("A number with no meaning whatsoever: {}", .{used_param});
+    pub fn handleImportedVariable(_: *Self, first: FirstExportedVariable, second: dv.SecondExportedVariable) !void {
+        std.log.info("parameters from imported file: {d}, {d}", .{ first.number, second.number });
     }
 
     pub fn deinit(_: *Self) !void {}
 };
 
-// These will be used in another test
-pub const FirstExportedVariable = struct {
-    number: u64,
-};
-
-pub const SecondExportedVariable = struct {
-    number: u64,
-};
-
-test "Discared variable" {
+test "Imported variable" {
     testing.log_level = .info;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -47,7 +40,7 @@ test "Discared variable" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.getActor(DiscaredVariableActorProxy, "test_actor");
-    try test_actor.handleDiscaredVariable("Hello, world!", 1, 42);
+    const test_actor = try engine.getActor(ImportedVariableActorProxy, "test_actor");
+    try test_actor.handleImportedVariable(.{ .number = 1 }, .{ .number = 42 });
     try engine.loop.run(.once);
 }

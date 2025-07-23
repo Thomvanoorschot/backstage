@@ -18,6 +18,7 @@ pub fn build(b: *Build) void {
         "lazy_actor",
         "actor_to_actor",
         "discared_variable",
+        "imported_variable",
     };
 
     const test_step = b.step("test", "Run all tests");

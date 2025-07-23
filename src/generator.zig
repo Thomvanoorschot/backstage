@@ -494,6 +494,98 @@ fn calculateRelativePath(allocator: std.mem.Allocator, from_dir: []const u8, to_
     return std.fs.path.relative(allocator, from_normalized, to_normalized);
 }
 
+fn extractAndCopyImports(allocator: std.mem.Allocator, writer: anytype, file_content: []const u8, file_path: []const u8, output_dir: []const u8) !void {
+    var lines = std.mem.splitAny(u8, file_content, "\n");
+
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+
+        if (trimmed.len == 0 or std.mem.startsWith(u8, trimmed, "//") or !std.mem.startsWith(u8, trimmed, "const ")) {
+            continue;
+        }
+
+        if (std.mem.indexOf(u8, trimmed, "@import(") == null) {
+            continue;
+        }
+
+        if (std.mem.indexOf(u8, trimmed, "@import(\"std\")") != null or
+            std.mem.indexOf(u8, trimmed, "@import(\"backstage\")") != null or
+            std.mem.indexOf(u8, trimmed, "@import(\"testing\")") != null)
+        {
+            continue;
+        }
+
+        if (std.mem.indexOf(u8, trimmed, "generated/") != null and std.mem.indexOf(u8, trimmed, "_proxy.gen.zig") != null) {
+            continue;
+        }
+
+        if (extractImportInfo(allocator, trimmed)) |import_info| {
+            defer allocator.free(import_info.name);
+            defer allocator.free(import_info.path);
+            defer allocator.free(import_info.member);
+
+            const adjusted_import_path = if (std.mem.endsWith(u8, import_info.path, ".zig"))
+                try adjustRelativeImportPath(allocator, import_info.path, file_path, output_dir)
+            else
+                try allocator.dupe(u8, import_info.path);
+            defer allocator.free(adjusted_import_path);
+
+            if (import_info.member.len > 0) {
+                try writer.print("const {s} = @import(\"{s}\").{s};\n", .{ import_info.name, adjusted_import_path, import_info.member });
+            } else {
+                try writer.print("const {s} = @import(\"{s}\");\n", .{ import_info.name, adjusted_import_path });
+            }
+        } else |_| {
+            continue;
+        }
+    }
+}
+
+const ImportInfo = struct {
+    name: []u8,
+    path: []u8,
+    member: []u8,
+};
+
+fn extractImportInfo(allocator: std.mem.Allocator, line: []const u8) !ImportInfo {
+    if (!std.mem.startsWith(u8, line, "const ")) return error.InvalidImport;
+
+    const after_const = line[6..];
+    const eq_pos = std.mem.indexOf(u8, after_const, " =") orelse return error.InvalidImport;
+    const name = std.mem.trim(u8, after_const[0..eq_pos], " \t");
+
+    const import_start = std.mem.indexOf(u8, line, "@import(\"") orelse return error.InvalidImport;
+    const path_start = import_start + 9;
+    const path_end = std.mem.indexOf(u8, line[path_start..], "\"") orelse return error.InvalidImport;
+    const path = line[path_start .. path_start + path_end];
+
+    const after_import = line[path_start + path_end + 1 ..];
+    var member: []const u8 = "";
+
+    if (std.mem.startsWith(u8, after_import, ").")) {
+        const member_start = 2; // skip ")."
+        const member_part = after_import[member_start..];
+        if (std.mem.indexOf(u8, member_part, ";")) |semicolon_pos| {
+            member = std.mem.trim(u8, member_part[0..semicolon_pos], " \t");
+        }
+    }
+
+    return ImportInfo{
+        .name = try allocator.dupe(u8, name),
+        .path = try allocator.dupe(u8, path),
+        .member = try allocator.dupe(u8, member),
+    };
+}
+
+fn adjustRelativeImportPath(allocator: std.mem.Allocator, original_path: []const u8, from_file: []const u8, to_dir: []const u8) ![]u8 {
+    const from_dir = std.fs.path.dirname(from_file) orelse ".";
+
+    const resolved_target = try std.fs.path.resolve(allocator, &[_][]const u8{ from_dir, original_path });
+    defer allocator.free(resolved_target);
+
+    return calculateRelativePath(allocator, to_dir, resolved_target);
+}
+
 fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name: []const u8, methods: []const MethodInfo, file_path: []const u8, output_dir: []const u8, file_content: []const u8) !void {
     const relative_import = try calculateRelativePath(allocator, output_dir, file_path);
     defer allocator.free(relative_import);
@@ -524,6 +616,8 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
     while (type_iterator.next()) |entry| {
         try writer.print("const {s} = @import(\"{s}\").{s};\n", .{ entry.key_ptr.*, relative_import, entry.key_ptr.* });
     }
+
+    try extractAndCopyImports(allocator, writer, file_content, file_path, output_dir);
 
     try writer.print(
         \\
