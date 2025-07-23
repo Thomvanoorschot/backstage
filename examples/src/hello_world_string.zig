@@ -5,8 +5,10 @@ const testing = std.testing;
 const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
+const HelloWorldStringActorProxy = @import("generated/hello_world_string_actor_proxy.gen.zig").HelloWorldStringActorProxy;
 
-const TestActor = struct {
+// @generate-proxy
+pub const HelloWorldStringActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
     hello_world_received: bool = false,
@@ -21,10 +23,10 @@ const TestActor = struct {
         return self;
     }
 
-    pub fn receive(self: *Self, envelope: Envelope) !void {
-        if (std.mem.eql(u8, envelope.message, "Hello, world!")) {
+    pub fn logHelloWorld(self: *Self, message: []const u8) !void {
+        if (std.mem.eql(u8, message, "Hello, world!")) {
             self.hello_world_received = true;
-            std.log.info("{s}", .{envelope.message});
+            std.log.info("{s}", .{message});
         }
     }
 
@@ -40,10 +42,8 @@ test "Hello, World!" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.spawnActor(TestActor, .{
-        .id = "test_actor",
-    });
-    try engine.send("test_actor", "Hello, world!");
+    const test_actor = try engine.getActor(HelloWorldStringActorProxy, "test_actor");
+    try test_actor.logHelloWorld("Hello, world!");
     try engine.loop.run(.once);
-    try testing.expect(test_actor.hello_world_received);
+    try testing.expect(test_actor.underlying.hello_world_received);
 }

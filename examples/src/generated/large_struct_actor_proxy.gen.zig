@@ -2,19 +2,19 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
-const LazyActor = @import("../lazy_actor.zig").LazyActor;
-const AddAmountWithMultiplier = @import("../lazy_actor.zig").AddAmountWithMultiplier;
+const LargeStructActor = @import("../large_unused_struct.zig").LargeStructActor;
+const LargeStruct = @import("../large_unused_struct.zig").LargeStruct;
 
-pub const LazyActorProxy = struct {
+pub const LargeStructActorProxy = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
-    underlying: *LazyActor,
+    underlying: *LargeStructActor,
     
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
         const self = try allocator.create(Self);
-        const underlying = try LazyActor.init(ctx, allocator);
+        const underlying = try LargeStructActor.init(ctx, allocator);
         self.* = .{
             .ctx = ctx,
             .allocator = allocator,
@@ -31,29 +31,20 @@ pub const LazyActorProxy = struct {
 
     fn methodWrapper0(self: *Self, params_json: []const u8) !void {
         const params = try std.json.parseFromSlice(struct {
-            amount: u64,
+            unused_param: LargeStruct,
         }, std.heap.page_allocator, params_json, .{});
         defer params.deinit();
-        try self.underlying.addAmount(params.value.amount);
-    }
-
-    fn methodWrapper1(self: *Self, params_json: []const u8) !void {
-        const params = try std.json.parseFromSlice(struct {
-            params: AddAmountWithMultiplier,
-        }, std.heap.page_allocator, params_json, .{});
-        defer params.deinit();
-        try self.underlying.addAmountWithMultiplier(params.value.params);
+        try self.underlying.handleLargeStruct(params.value.unused_param);
     }
 
     const method_table = [_]MethodFn{
         methodWrapper0,
-        methodWrapper1,
     };
 
-    pub fn addAmount(self: *Self, amount: u64) !void {
+    pub fn handleLargeStruct(self: *Self, unused_param: LargeStruct) !void {
         var params_json = std.ArrayList(u8).init(self.allocator);
         defer params_json.deinit();
-        try std.json.stringify(.{.amount = amount}, .{}, params_json.writer());
+        try std.json.stringify(.{.unused_param = unused_param}, .{}, params_json.writer());
         const params_str = try params_json.toOwnedSlice();
         defer self.allocator.free(params_str);
         const method_call = MethodCall{
@@ -62,20 +53,8 @@ pub const LazyActorProxy = struct {
         };
         try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 
-    pub fn addAmountWithMultiplier(self: *Self, params: AddAmountWithMultiplier) !void {
-        var params_json = std.ArrayList(u8).init(self.allocator);
-        defer params_json.deinit();
-        try std.json.stringify(.{.params = params}, .{}, params_json.writer());
-        const params_str = try params_json.toOwnedSlice();
-        defer self.allocator.free(params_str);
-        const method_call = MethodCall{
-            .method_id = 1,
-            .params = params_str,
-        };
-        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
-
     pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
-        if (method_call.method_id >= 2) {
+        if (method_call.method_id >= 1) {
             return error.UnknownMethod;
         }
         try method_table[method_call.method_id](self, method_call.params);

@@ -197,8 +197,8 @@ pub const Context = struct {
         self.engine.loop.timer(completion, delay_ms, userdata, callback);
     }
 
-    pub fn getActor(self: *const Self, id: []const u8) ?*ActorInterface {
-        return self.engine.registry.getByID(id);
+    pub fn getActor(self: *const Self, comptime ActorType: type, id: []const u8) !*ActorType {
+        return try self.engine.getActor(ActorType, id);
     }
     pub fn spawnActor(self: *Self, comptime ActorType: type, options: ActorOptions) !*ActorType {
         return try self.engine.spawnActor(ActorType, options);

@@ -14,7 +14,7 @@ pub fn build(b: *Build) void {
     const example_names = .{
         "hello_world_string",
         "hello_world_struct",
-        "large_struct",
+        "large_unused_struct",
         "lazy_actor",
         "actor_to_actor",
     };

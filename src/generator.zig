@@ -9,9 +9,6 @@ pub fn main() !void {
     const scan_dirs = build_options.scan_dirs;
     const output_dir = build_options.output_dir;
 
-    std.log.info("Scanning directories: {s}", .{scan_dirs});
-    std.log.info("Output directory: {s}", .{output_dir});
-
     const actor_files = try discoverMarkedActors(allocator, scan_dirs);
     defer {
         for (actor_files.items) |file| {
@@ -147,7 +144,8 @@ fn extractParamNames(allocator: std.mem.Allocator, params: []const u8) ![][]cons
         if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
             const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
             if (!std.mem.eql(u8, param_name, "self")) {
-                try param_names.append(param_name);
+                const display_name = if (std.mem.eql(u8, param_name, "_")) "unused_param" else param_name;
+                try param_names.append(display_name);
             }
         }
     }
@@ -165,26 +163,22 @@ fn isBuiltinType(type_name: []const u8) bool {
         "[]u8",           "*const u8", "*u8",
     };
 
-    // Check if it's a basic builtin type
     for (builtin_types) |builtin| {
         if (std.mem.eql(u8, type_name, builtin)) {
             return true;
         }
     }
 
-    // Check for slice types []T or [N]T
     if (std.mem.startsWith(u8, type_name, "[]") or
         std.mem.startsWith(u8, type_name, "["))
     {
         return true;
     }
 
-    // Check for pointer types *T
     if (std.mem.startsWith(u8, type_name, "*")) {
         return true;
     }
 
-    // Check for optional types ?T
     if (std.mem.startsWith(u8, type_name, "?")) {
         return true;
     }
@@ -192,20 +186,238 @@ fn isBuiltinType(type_name: []const u8) bool {
     return false;
 }
 
-fn prefixTypeIfNeeded(allocator: std.mem.Allocator, type_name: []const u8, struct_name: []const u8) ![]u8 {
+fn isTypeDefinedInFile(file_content: []const u8, type_name: []const u8) bool {
+    var lines = std.mem.splitAny(u8, file_content, "\n");
+
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+
+        if (std.mem.startsWith(u8, trimmed, "pub const ") or std.mem.startsWith(u8, trimmed, "const ")) {
+            if (extractConstName(trimmed)) |name| {
+                if (std.mem.eql(u8, name, type_name)) {
+                    if (std.mem.indexOf(u8, trimmed, "= struct")) |_| {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+fn resolveTypeWithImports(allocator: std.mem.Allocator, type_name: []const u8, file_content: []const u8, struct_name: []const u8) ![]u8 {
     if (isBuiltinType(type_name)) {
         return try allocator.dupe(u8, type_name);
     }
-    return try std.fmt.allocPrint(allocator, "{s}.{s}", .{ struct_name, type_name });
+
+    if (std.mem.startsWith(u8, type_name, "*") or
+        std.mem.startsWith(u8, type_name, "[]") or
+        std.mem.startsWith(u8, type_name, "?"))
+    {
+        var inner_start: usize = 0;
+        if (std.mem.startsWith(u8, type_name, "*")) inner_start = 1;
+        if (std.mem.startsWith(u8, type_name, "[]")) inner_start = 2;
+        if (std.mem.startsWith(u8, type_name, "?")) inner_start = 1;
+
+        const inner_type = type_name[inner_start..];
+        const resolved_inner = try resolveTypeWithImports(allocator, inner_type, file_content, struct_name);
+        defer allocator.free(resolved_inner);
+
+        return try std.fmt.allocPrint(allocator, "{s}{s}", .{ type_name[0..inner_start], resolved_inner });
+    }
+
+    const type_root = if (std.mem.indexOf(u8, type_name, ".")) |dot_pos|
+        type_name[0..dot_pos]
+    else
+        type_name;
+
+    if (findConstDefinition(file_content, type_root)) |_| {
+        return try allocator.dupe(u8, type_name);
+    }
+
+    if (isTypeDefinedInStruct(file_content, struct_name, type_name)) {
+        return try std.fmt.allocPrint(allocator, "{s}.{s}", .{ struct_name, type_name });
+    }
+
+    return try allocator.dupe(u8, type_name);
+}
+
+fn findConstDefinition(file_content: []const u8, const_name: []const u8) ?[]const u8 {
+    var lines = std.mem.splitAny(u8, file_content, "\n");
+
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+
+        if (std.mem.startsWith(u8, trimmed, "const ")) {
+            if (extractConstName(trimmed)) |name| {
+                if (std.mem.eql(u8, name, const_name)) {
+                    return trimmed;
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+fn isTypeDefinedInStruct(file_content: []const u8, struct_name: []const u8, type_name: []const u8) bool {
+    var lines = std.mem.splitAny(u8, file_content, "\n");
+    var inside_target_struct = false;
+    var brace_depth: i32 = 0;
+
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+
+        if (!inside_target_struct) {
+            if (std.mem.indexOf(u8, trimmed, "= struct {")) |_| {
+                if (extractStructName(trimmed)) |name| {
+                    if (std.mem.eql(u8, name, struct_name)) {
+                        inside_target_struct = true;
+                        brace_depth = 1;
+                        continue;
+                    }
+                }
+            }
+            continue;
+        }
+
+        for (trimmed) |char| {
+            if (char == '{') brace_depth += 1;
+            if (char == '}') brace_depth -= 1;
+        }
+
+        if (brace_depth == 0) {
+            break;
+        }
+
+        if (std.mem.startsWith(u8, trimmed, "pub const ") or std.mem.startsWith(u8, trimmed, "const ")) {
+            if (extractConstName(trimmed)) |name| {
+                if (std.mem.eql(u8, name, type_name)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+fn extractConstName(line: []const u8) ?[]const u8 {
+    const const_pos = std.mem.indexOf(u8, line, "const ") orelse return null;
+    const after_const = line[const_pos + 6 ..];
+    const eq_pos = std.mem.indexOf(u8, after_const, " =") orelse return null;
+    return std.mem.trim(u8, after_const[0..eq_pos], " \t");
+}
+
+fn collectTypesToImport(allocator: std.mem.Allocator, params: []const u8, file_content: []const u8, struct_name: []const u8, types_to_import: *std.StringHashMap(void)) !void {
+    var param_split = std.mem.splitAny(u8, params, ",");
+    while (param_split.next()) |param| {
+        const trimmed = std.mem.trim(u8, param, " \t");
+        if (trimmed.len == 0) continue;
+        if (std.mem.indexOf(u8, trimmed, "self")) |_| continue;
+
+        if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
+            const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
+            try collectTypeFromTypeString(allocator, param_type, file_content, struct_name, types_to_import);
+        }
+    }
+}
+
+fn collectTypeFromTypeString(allocator: std.mem.Allocator, type_name: []const u8, file_content: []const u8, struct_name: []const u8, types_to_import: *std.StringHashMap(void)) !void {
+    var actual_type = type_name;
+    if (std.mem.startsWith(u8, type_name, "*")) {
+        actual_type = type_name[1..];
+    } else if (std.mem.startsWith(u8, type_name, "[]")) {
+        actual_type = type_name[2..];
+    } else if (std.mem.startsWith(u8, type_name, "?")) {
+        actual_type = type_name[1..];
+    }
+
+    if (isBuiltinType(actual_type)) {
+        return;
+    }
+
+    const type_root = if (std.mem.indexOf(u8, actual_type, ".")) |dot_pos|
+        actual_type[0..dot_pos]
+    else
+        actual_type;
+
+    if (findConstDefinition(file_content, type_root)) |_| {
+        return;
+    }
+
+    if (isTypeDefinedInFile(file_content, actual_type) or isTypeDefinedInStruct(file_content, struct_name, actual_type)) {
+        if (!types_to_import.contains(actual_type)) {
+            const owned_type = try allocator.dupe(u8, actual_type);
+            try types_to_import.put(owned_type, {});
+        }
+    }
+}
+
+fn resolveTypeForProxy(allocator: std.mem.Allocator, type_name: []const u8, file_content: []const u8, struct_name: []const u8, types_to_import: *std.StringHashMap(void)) ![]u8 {
+    if (isBuiltinType(type_name)) {
+        return try allocator.dupe(u8, type_name);
+    }
+
+    if (std.mem.startsWith(u8, type_name, "*") or
+        std.mem.startsWith(u8, type_name, "[]") or
+        std.mem.startsWith(u8, type_name, "?"))
+    {
+        var inner_start: usize = 0;
+        if (std.mem.startsWith(u8, type_name, "*")) inner_start = 1;
+        if (std.mem.startsWith(u8, type_name, "[]")) inner_start = 2;
+        if (std.mem.startsWith(u8, type_name, "?")) inner_start = 1;
+
+        const inner_type = type_name[inner_start..];
+        const resolved_inner = try resolveTypeForProxy(allocator, inner_type, file_content, struct_name, types_to_import);
+        defer allocator.free(resolved_inner);
+
+        return try std.fmt.allocPrint(allocator, "{s}{s}", .{ type_name[0..inner_start], resolved_inner });
+    }
+
+    const type_root = if (std.mem.indexOf(u8, type_name, ".")) |dot_pos|
+        type_name[0..dot_pos]
+    else
+        type_name;
+
+    if (findConstDefinition(file_content, type_root)) |_| {
+        return try allocator.dupe(u8, type_name);
+    }
+
+    if (types_to_import.contains(type_name)) {
+        return try allocator.dupe(u8, type_name);
+    }
+
+    return try allocator.dupe(u8, type_name);
+}
+
+fn structNameToSnakeCase(allocator: std.mem.Allocator, struct_name: []const u8) ![]u8 {
+    var result = std.ArrayList(u8).init(allocator);
+    defer result.deinit();
+
+    for (struct_name, 0..) |char, i| {
+        if (std.ascii.isUpper(char)) {
+            if (i > 0) {
+                try result.append('_');
+            }
+            try result.append(std.ascii.toLower(char));
+        } else {
+            try result.append(char);
+        }
+    }
+
+    return result.toOwnedSlice();
 }
 
 fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_name: []const u8, output_dir: []const u8) !void {
     const content = try std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024);
     defer allocator.free(content);
 
-    const filename = std.fs.path.basename(file_path);
-    const name_without_ext = filename[0 .. filename.len - 4];
-    const output_filename = try std.fmt.allocPrint(allocator, "{s}/{s}_proxy.gen.zig", .{ output_dir, name_without_ext });
+    const snake_case_name = try structNameToSnakeCase(allocator, struct_name);
+    defer allocator.free(snake_case_name);
+
+    const output_filename = try std.fmt.allocPrint(allocator, "{s}/{s}_proxy.gen.zig", .{ output_dir, snake_case_name });
     defer allocator.free(output_filename);
 
     std.fs.cwd().makePath(output_dir) catch {};
@@ -218,20 +430,46 @@ fn generateProxy(allocator: std.mem.Allocator, file_path: []const u8, struct_nam
     defer regular_methods.deinit();
 
     var lines = std.mem.splitAny(u8, content, "\n");
+    var inside_target_struct = false;
+    var brace_depth: i32 = 0;
+
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t");
-        if (!std.mem.startsWith(u8, trimmed, "pub fn ")) continue;
 
-        const brace_pos = std.mem.indexOf(u8, trimmed, "{") orelse continue;
-        const signature = trimmed[0..brace_pos];
-        const method_info = parseMethodSignature(signature) orelse continue;
+        if (!inside_target_struct) {
+            if (std.mem.indexOf(u8, trimmed, "= struct {")) |_| {
+                if (extractStructName(trimmed)) |name| {
+                    if (std.mem.eql(u8, name, struct_name)) {
+                        inside_target_struct = true;
+                        brace_depth = 1;
+                        continue;
+                    }
+                }
+            }
+            continue;
+        }
 
-        if (!std.mem.eql(u8, method_info.name, "init") and !std.mem.eql(u8, method_info.name, "deinit")) {
-            try regular_methods.append(method_info);
+        for (trimmed) |char| {
+            if (char == '{') brace_depth += 1;
+            if (char == '}') brace_depth -= 1;
+        }
+
+        if (brace_depth == 0) {
+            break;
+        }
+
+        if (std.mem.startsWith(u8, trimmed, "pub fn ")) {
+            const brace_pos = std.mem.indexOf(u8, trimmed, "{") orelse continue;
+            const signature = trimmed[0..brace_pos];
+            const method_info = parseMethodSignature(signature) orelse continue;
+
+            if (!std.mem.eql(u8, method_info.name, "init") and !std.mem.eql(u8, method_info.name, "deinit")) {
+                try regular_methods.append(method_info);
+            }
         }
     }
 
-    try generateActorProxy(allocator, writer, struct_name, regular_methods.items, file_path, output_dir);
+    try generateActorProxy(allocator, writer, struct_name, regular_methods.items, file_path, output_dir, content);
 }
 
 fn calculateRelativePath(allocator: std.mem.Allocator, from_dir: []const u8, to_file: []const u8) ![]u8 {
@@ -244,9 +482,22 @@ fn calculateRelativePath(allocator: std.mem.Allocator, from_dir: []const u8, to_
     return std.fs.path.relative(allocator, from_normalized, to_normalized);
 }
 
-fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name: []const u8, methods: []const MethodInfo, file_path: []const u8, output_dir: []const u8) !void {
+fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name: []const u8, methods: []const MethodInfo, file_path: []const u8, output_dir: []const u8, file_content: []const u8) !void {
     const relative_import = try calculateRelativePath(allocator, output_dir, file_path);
     defer allocator.free(relative_import);
+
+    var types_to_import = std.StringHashMap(void).init(allocator);
+    defer {
+        var iterator = types_to_import.iterator();
+        while (iterator.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+        }
+        types_to_import.deinit();
+    }
+
+    for (methods) |method| {
+        try collectTypesToImport(allocator, method.params, file_content, struct_name, &types_to_import);
+    }
 
     try writer.print(
         \\const std = @import("std");
@@ -254,6 +505,15 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
         \\const Context = backstage.Context;
         \\const MethodCall = backstage.MethodCall;
         \\const {s} = @import("{s}").{s};
+        \\
+    , .{ struct_name, relative_import, struct_name });
+
+    var type_iterator = types_to_import.iterator();
+    while (type_iterator.next()) |entry| {
+        try writer.print("const {s} = @import(\"{s}\").{s};\n", .{ entry.key_ptr.*, relative_import, entry.key_ptr.* });
+    }
+
+    try writer.print(
         \\
         \\pub const {s}Proxy = struct {{
         \\    ctx: *Context,
@@ -278,12 +538,12 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
         \\        self.allocator.destroy(self);
         \\    }}
         \\
-    , .{ struct_name, relative_import, struct_name, struct_name, struct_name, struct_name });
+    , .{ struct_name, struct_name, struct_name });
 
-    try generateMethodTable(allocator, writer, methods, struct_name);
+    try generateMethodTable(allocator, writer, methods, struct_name, file_content, &types_to_import);
 
     for (methods, 0..) |method, i| {
-        try generateProxyMethod(allocator, writer, method, i, struct_name);
+        try generateProxyMethod(allocator, writer, method, i, struct_name, file_content, &types_to_import);
     }
 
     try generateDispatchFunction(writer, methods.len);
@@ -291,11 +551,11 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
     try writer.writeAll("};\n");
 }
 
-fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: []const MethodInfo, struct_name: []const u8) !void {
+fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: []const MethodInfo, struct_name: []const u8, file_content: []const u8, types_to_import: *std.StringHashMap(void)) !void {
     try writer.print("    const MethodFn = *const fn (*Self, []const u8) anyerror!void;\n\n", .{});
 
     for (methods, 0..) |method, i| {
-        try generateMethodWrapper(allocator, writer, method, i, struct_name);
+        try generateMethodWrapper(allocator, writer, method, i, struct_name, file_content, types_to_import);
     }
 
     try writer.print("    const method_table = [_]MethodFn{{\n", .{});
@@ -305,7 +565,7 @@ fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: [
     try writer.writeAll("    };\n\n");
 }
 
-fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: MethodInfo, index: usize, struct_name: []const u8) !void {
+fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: MethodInfo, index: usize, struct_name: []const u8, file_content: []const u8, types_to_import: *std.StringHashMap(void)) !void {
     try writer.print("    fn methodWrapper{d}(self: *Self, params_json: []const u8) !void {{\n", .{index});
 
     const param_names = try extractParamNames(allocator, method.params);
@@ -323,9 +583,11 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
             if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
                 const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
                 const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
-                const prefixed_type = try prefixTypeIfNeeded(allocator, param_type, struct_name);
-                defer allocator.free(prefixed_type);
-                try writer.print("            {s}: {s},\n", .{ param_name, prefixed_type });
+                const resolved_type = try resolveTypeForProxy(allocator, param_type, file_content, struct_name, types_to_import);
+                defer allocator.free(resolved_type);
+
+                const display_param_name = if (std.mem.eql(u8, param_name, "_")) "unused_param" else param_name;
+                try writer.print("            {s}: {s},\n", .{ display_param_name, resolved_type });
             }
         }
 
@@ -346,7 +608,7 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
     try writer.writeAll("    }\n\n");
 }
 
-fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_info: MethodInfo, method_index: usize, struct_name: []const u8) !void {
+fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_info: MethodInfo, method_index: usize, struct_name: []const u8, file_content: []const u8, types_to_import: *std.StringHashMap(void)) !void {
     const param_names = try extractParamNames(allocator, method_info.params);
     defer allocator.free(param_names);
 
@@ -362,9 +624,11 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
             if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
                 const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
                 const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
-                const prefixed_type = try prefixTypeIfNeeded(allocator, param_type, struct_name);
-                defer allocator.free(prefixed_type);
-                try writer.print(", {s}: {s}", .{ param_name, prefixed_type });
+                const resolved_type = try resolveTypeForProxy(allocator, param_type, file_content, struct_name, types_to_import);
+                defer allocator.free(resolved_type);
+
+                const display_param_name = if (std.mem.eql(u8, param_name, "_")) "unused_param" else param_name;
+                try writer.print(", {s}: {s}", .{ display_param_name, resolved_type });
             } else {
                 try writer.print(", {s}", .{trimmed});
             }
@@ -373,7 +637,9 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
 
     try writer.writeAll(") !void {\n");
 
-    if (param_names.len > 0) {
+    if (param_names.len == 0) {
+        try writer.writeAll("        const params_str = \"\";\n");
+    } else {
         try writer.writeAll("        var params_json = std.ArrayList(u8).init(self.allocator);\n");
         try writer.writeAll("        defer params_json.deinit();\n");
         try writer.writeAll("        try std.json.stringify(.{");
@@ -386,8 +652,6 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
         try writer.writeAll("}, .{}, params_json.writer());\n");
         try writer.writeAll("        const params_str = try params_json.toOwnedSlice();\n");
         try writer.writeAll("        defer self.allocator.free(params_str);\n");
-    } else {
-        try writer.writeAll("        const params_str = \"\";\n");
     }
 
     try writer.print(
@@ -396,10 +660,9 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
         \\            .params = params_str,
         \\        }};
         \\        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
-        \\    }}
-        \\
-        \\
     , .{method_index});
+
+    try writer.writeAll("    }\n\n");
 }
 
 fn generateDispatchFunction(writer: anytype, method_count: usize) !void {

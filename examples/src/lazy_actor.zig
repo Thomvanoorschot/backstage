@@ -27,16 +27,16 @@ pub const LazyActor = struct {
         self.amount += amount;
     }
 
-    pub const AddAmountWithMultiplier = struct {
-        amount: u64,
-        multiplier: u64,
-    };
-
     pub fn addAmountWithMultiplier(self: *Self, params: AddAmountWithMultiplier) !void {
         self.amount += params.amount * params.multiplier;
     }
 
     pub fn deinit(_: *Self) !void {}
+};
+
+pub const AddAmountWithMultiplier = struct {
+    amount: u64,
+    multiplier: u64,
 };
 
 test "Lazy actor with simple parameter method call" {
