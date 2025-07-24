@@ -19,6 +19,7 @@ pub fn build(b: *Build) void {
         "actor_to_actor",
         "discared_variable",
         "imported_variable",
+        "multiple_messages",
     };
 
     const test_step = b.step("test", "Run all tests");
