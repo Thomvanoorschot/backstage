@@ -20,6 +20,7 @@ pub fn build(b: *Build) void {
         "discared_variable",
         "imported_variable",
         "multiple_messages",
+        "poison_pill",
     };
 
     const test_step = b.step("test", "Run all tests");
