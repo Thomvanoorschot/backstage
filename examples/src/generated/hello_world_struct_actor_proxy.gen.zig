@@ -6,6 +6,7 @@ const HelloWorldStructActor = @import("../hello_world_struct.zig").HelloWorldStr
 const HelloWorldStruct = @import("../hello_world_struct.zig").HelloWorldStruct;
 
 pub const HelloWorldStructActorProxy = struct {
+    pub const is_proxy = true;
     ctx: *Context,
     allocator: std.mem.Allocator,
     underlying: *HelloWorldStructActor,

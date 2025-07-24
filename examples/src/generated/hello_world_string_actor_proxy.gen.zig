@@ -5,6 +5,7 @@ const MethodCall = backstage.MethodCall;
 const HelloWorldStringActor = @import("../hello_world_string.zig").HelloWorldStringActor;
 
 pub const HelloWorldStringActorProxy = struct {
+    pub const is_proxy = true;
     ctx: *Context,
     allocator: std.mem.Allocator,
     underlying: *HelloWorldStringActor,

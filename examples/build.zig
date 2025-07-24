@@ -15,7 +15,7 @@ pub fn build(b: *Build) void {
         "hello_world_string",
         "hello_world_struct",
         "large_struct",
-        "lazy_actor",
+        "multiple_methods",
         "actor_to_actor",
         "discared_variable",
         "imported_variable",

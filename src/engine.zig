@@ -59,6 +59,9 @@ pub const Engine = struct {
     }
 
     pub fn getActor(self: *Self, comptime ActorType: type, id: []const u8) !*ActorType {
+        if (!@hasDecl(ActorType, "is_proxy")) {
+            @compileError("getActor can only be used with proxy types. Use the generated proxy types instead of the raw actor types.");
+        }
         const actor = self.registry.getByID(id);
         if (actor) |a| {
             return unsafeAnyOpaqueCast(ActorType, a.impl);

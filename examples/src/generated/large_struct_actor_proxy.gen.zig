@@ -6,6 +6,7 @@ const LargeStructActor = @import("../large_struct.zig").LargeStructActor;
 const LargeStruct = @import("../large_struct.zig").LargeStruct;
 
 pub const LargeStructActorProxy = struct {
+    pub const is_proxy = true;
     ctx: *Context,
     allocator: std.mem.Allocator,
     underlying: *LargeStructActor,

@@ -563,7 +563,7 @@ fn extractImportInfo(allocator: std.mem.Allocator, line: []const u8) !ImportInfo
     var member: []const u8 = "";
 
     if (std.mem.startsWith(u8, after_import, ").")) {
-        const member_start = 2; // skip ")."
+        const member_start = 2;
         const member_part = after_import[member_start..];
         if (std.mem.indexOf(u8, member_part, ";")) |semicolon_pos| {
             member = std.mem.trim(u8, member_part[0..semicolon_pos], " \t");
@@ -622,6 +622,7 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
     try writer.print(
         \\
         \\pub const {s}Proxy = struct {{
+        \\    pub const is_proxy = true;
         \\    ctx: *Context,
         \\    allocator: std.mem.Allocator,
         \\    underlying: *{s},

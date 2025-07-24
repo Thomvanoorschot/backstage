@@ -5,6 +5,7 @@ const MethodCall = backstage.MethodCall;
 const DiscaredVariableActor = @import("../discared_variable.zig").DiscaredVariableActor;
 
 pub const DiscaredVariableActorProxy = struct {
+    pub const is_proxy = true;
     ctx: *Context,
     allocator: std.mem.Allocator,
     underlying: *DiscaredVariableActor,

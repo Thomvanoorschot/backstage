@@ -5,10 +5,10 @@ const testing = std.testing;
 const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
-const LazyActorProxy = @import("generated/lazy_actor_proxy.gen.zig").LazyActorProxy;
+const MultipleMethodsActorProxy = @import("generated/multiple_methods_actor_proxy.gen.zig").MultipleMethodsActorProxy;
 
 // @generate-proxy
-pub const LazyActor = struct {
+pub const MultipleMethodsActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
     amount: u64 = 0,
@@ -48,7 +48,7 @@ test "Lazy actor with simple parameter method call" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.getActor(LazyActorProxy, "test_actor");
+    const test_actor = try engine.getActor(MultipleMethodsActorProxy, "test_actor");
     try test_actor.addAmount(10);
     try engine.loop.run(.once);
     try testing.expect(test_actor.underlying.amount == 10);
@@ -63,7 +63,7 @@ test "Lazy actor with struct parameter method call" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.getActor(LazyActorProxy, "test_actor");
+    const test_actor = try engine.getActor(MultipleMethodsActorProxy, "test_actor");
     try test_actor.addAmountWithMultiplier(.{
         .amount = 10,
         .multiplier = 2,

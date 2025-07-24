@@ -2,19 +2,20 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
-const LazyActor = @import("../lazy_actor.zig").LazyActor;
-const AddAmountWithMultiplier = @import("../lazy_actor.zig").AddAmountWithMultiplier;
+const MultipleMethodsActor = @import("../multiple_methods.zig").MultipleMethodsActor;
+const AddAmountWithMultiplier = @import("../multiple_methods.zig").AddAmountWithMultiplier;
 
-pub const LazyActorProxy = struct {
+pub const MultipleMethodsActorProxy = struct {
+    pub const is_proxy = true;
     ctx: *Context,
     allocator: std.mem.Allocator,
-    underlying: *LazyActor,
+    underlying: *MultipleMethodsActor,
     
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
         const self = try allocator.create(Self);
-        const underlying = try LazyActor.init(ctx, allocator);
+        const underlying = try MultipleMethodsActor.init(ctx, allocator);
         self.* = .{
             .ctx = ctx,
             .allocator = allocator,

@@ -7,6 +7,7 @@ const FirstExportedVariable = @import("../discared_variable.zig").FirstExportedV
 const dv = @import("../discared_variable.zig");
 
 pub const ImportedVariableActorProxy = struct {
+    pub const is_proxy = true;
     ctx: *Context,
     allocator: std.mem.Allocator,
     underlying: *ImportedVariableActor,

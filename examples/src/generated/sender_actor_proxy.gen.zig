@@ -5,6 +5,7 @@ const MethodCall = backstage.MethodCall;
 const SenderActor = @import("../actor_to_actor.zig").SenderActor;
 
 pub const SenderActorProxy = struct {
+    pub const is_proxy = true;
     ctx: *Context,
     allocator: std.mem.Allocator,
     underlying: *SenderActor,
