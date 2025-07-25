@@ -1,0 +1,69 @@
+const backstage = @import("backstage");
+const std = @import("std");
+const testing = std.testing;
+
+const Engine = backstage.Engine;
+const Context = backstage.Context;
+const Envelope = backstage.Envelope;
+const PubActorProxy = @import("generated/pub_actor_proxy.gen.zig").PubActorProxy;
+const SubActorProxy = @import("generated/sub_actor_proxy.gen.zig").SubActorProxy;
+
+// @generate-proxy
+pub const PubActor = struct {
+    ctx: *Context,
+    allocator: std.mem.Allocator,
+    const Self = @This();
+
+    pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
+        const self = try allocator.create(Self);
+        self.* = .{
+            .ctx = ctx,
+            .allocator = allocator,
+        };
+        return self;
+    }
+
+    pub fn publish(self: *Self, message: []const u8) !void {
+        try self.ctx.publish(message);
+    }
+
+    pub fn deinit(_: *Self) !void {}
+};
+
+// @generate-proxy
+pub const SubActor = struct {
+    ctx: *Context,
+    allocator: std.mem.Allocator,
+    const Self = @This();
+
+    pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
+        const self = try allocator.create(Self);
+        self.* = .{
+            .ctx = ctx,
+            .allocator = allocator,
+        };
+        return self;
+    }
+
+    pub fn subscribe(self: *Self) !void {
+        try self.ctx.subscribeToActor("pub_actor");
+    }
+
+    pub fn deinit(_: *Self) !void {}
+};
+
+test "Pub sub" {
+    testing.log_level = .info;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var engine = try backstage.Engine.init(allocator);
+    defer engine.deinit();
+
+    const sub_actor = try engine.getActor(SubActorProxy, "sub_actor");
+    const pub_actor = try engine.getActor(PubActorProxy, "pub_actor");
+    try sub_actor.subscribe();
+    try pub_actor.publish("Hello, world!");
+    try engine.loop.run(.once);
+}

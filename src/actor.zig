@@ -165,14 +165,14 @@ pub const ActorInterface = struct {
         }
         var subscribers = self.ctx.topic_subscriptions.getPtr(envelope.message);
         if (subscribers == null) {
-            const owned_topic = try self.allocator.dupe(u8, envelope.message);
-            try self.ctx.topic_subscriptions.put(owned_topic, std.StringHashMap(void).init(self.allocator));
+            const owned_topic = try self.ctx.allocator.dupe(u8, envelope.message);
+            try self.ctx.topic_subscriptions.put(owned_topic, std.StringHashMap(void).init(self.ctx.allocator));
             subscribers = self.ctx.topic_subscriptions.getPtr(owned_topic);
         }
         if (subscribers.?.get(envelope.sender_id.?) != null) {
             return;
         }
-        const owned_sender_id = try self.allocator.dupe(u8, envelope.sender_id.?);
+        const owned_sender_id = try self.ctx.allocator.dupe(u8, envelope.sender_id.?);
         try subscribers.?.put(owned_sender_id, {});
     }
 

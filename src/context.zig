@@ -48,18 +48,22 @@ pub const Context = struct {
     pub fn deinit(self: *Self) void {
         // Cancel and cleanup timer completions
         self.deinitTimers();
-        // Cleanup subscriptions
+
+        var topic_it = self.topic_subscriptions.iterator();
+        while (topic_it.next()) |entry| {
+            entry.value_ptr.deinit();
+        }
+        self.topic_subscriptions.deinit();
+
         var sub_it = self.subscribed_to_actors.iterator();
         while (sub_it.next()) |entry| {
-            var topic_it = entry.value_ptr.keyIterator();
-            while (topic_it.next()) |topic| {
+            var sub_topic_it = entry.value_ptr.keyIterator();
+            while (sub_topic_it.next()) |topic| {
                 self.engine.unsubscribeFromActorTopic(self.actor_id, entry.key_ptr.*, topic.*) catch |err| {
                     std.log.warn("Failed to unsubscribe from {s} topic {s}: {}", .{ entry.key_ptr.*, topic.*, err });
                 };
-                self.allocator.free(topic.*);
             }
             entry.value_ptr.deinit();
-            self.allocator.free(entry.key_ptr.*);
         }
         self.subscribed_to_actors.deinit();
 
