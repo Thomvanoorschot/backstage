@@ -27,29 +27,22 @@ pub const SubActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    const MethodFn = *const fn (*Self, []const u8) anyerror!void;
-
-    fn methodWrapper0(self: *Self, params_json: []const u8) !void {
+    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
         _ = params_json;
-        try self.underlying.subscribe();
+        return self.underlying.subscribe();
     }
 
-    const method_table = [_]MethodFn{
-        methodWrapper0,
-    };
-
-    pub fn subscribe(self: *Self) !void {
+    pub inline fn subscribe(self: *Self) !void {
         const params_str = "";
         const method_call = MethodCall{
             .method_id = 0,
             .params = params_str,
         };
-        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
+        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 
-    pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
-        if (method_call.method_id >= 1) {
-            return error.UnknownMethod;
-        }
-        try method_table[method_call.method_id](self, method_call.params);
+    pub inline fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
+        return switch (method_call.method_id) {            0 => methodWrapper0(self, method_call.params),
+            else => error.UnknownMethod,
+        };
     }
 };

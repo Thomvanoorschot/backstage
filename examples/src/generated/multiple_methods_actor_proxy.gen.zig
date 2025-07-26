@@ -28,30 +28,23 @@ pub const MultipleMethodsActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    const MethodFn = *const fn (*Self, []const u8) anyerror!void;
-
-    fn methodWrapper0(self: *Self, params_json: []const u8) !void {
+    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
         const params = try std.json.parseFromSlice(struct {
             amount: u64,
         }, std.heap.page_allocator, params_json, .{});
         defer params.deinit();
-        try self.underlying.addAmount(params.value.amount);
+        return self.underlying.addAmount(params.value.amount);
     }
 
-    fn methodWrapper1(self: *Self, params_json: []const u8) !void {
+    inline fn methodWrapper1(self: *Self, params_json: []const u8) !void {
         const params = try std.json.parseFromSlice(struct {
             params: AddAmountWithMultiplier,
         }, std.heap.page_allocator, params_json, .{});
         defer params.deinit();
-        try self.underlying.addAmountWithMultiplier(params.value.params);
+        return self.underlying.addAmountWithMultiplier(params.value.params);
     }
 
-    const method_table = [_]MethodFn{
-        methodWrapper0,
-        methodWrapper1,
-    };
-
-    pub fn addAmount(self: *Self, amount: u64) !void {
+    pub inline fn addAmount(self: *Self, amount: u64) !void {
         var params_json = std.ArrayList(u8).init(self.allocator);
         defer params_json.deinit();
         try std.json.stringify(.{.amount = amount}, .{}, params_json.writer());
@@ -61,9 +54,9 @@ pub const MultipleMethodsActorProxy = struct {
             .method_id = 0,
             .params = params_str,
         };
-        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
+        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 
-    pub fn addAmountWithMultiplier(self: *Self, params: AddAmountWithMultiplier) !void {
+    pub inline fn addAmountWithMultiplier(self: *Self, params: AddAmountWithMultiplier) !void {
         var params_json = std.ArrayList(u8).init(self.allocator);
         defer params_json.deinit();
         try std.json.stringify(.{.params = params}, .{}, params_json.writer());
@@ -73,12 +66,12 @@ pub const MultipleMethodsActorProxy = struct {
             .method_id = 1,
             .params = params_str,
         };
-        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
+        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 
-    pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
-        if (method_call.method_id >= 2) {
-            return error.UnknownMethod;
-        }
-        try method_table[method_call.method_id](self, method_call.params);
+    pub inline fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
+        return switch (method_call.method_id) {            0 => methodWrapper0(self, method_call.params),
+            1 => methodWrapper1(self, method_call.params),
+            else => error.UnknownMethod,
+        };
     }
 };

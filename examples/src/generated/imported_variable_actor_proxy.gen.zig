@@ -29,22 +29,16 @@ pub const ImportedVariableActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    const MethodFn = *const fn (*Self, []const u8) anyerror!void;
-
-    fn methodWrapper0(self: *Self, params_json: []const u8) !void {
+    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
         const params = try std.json.parseFromSlice(struct {
             first: FirstExportedVariable,
             second: dv.SecondExportedVariable,
         }, std.heap.page_allocator, params_json, .{});
         defer params.deinit();
-        try self.underlying.handleImportedVariable(params.value.first, params.value.second);
+        return self.underlying.handleImportedVariable(params.value.first, params.value.second);
     }
 
-    const method_table = [_]MethodFn{
-        methodWrapper0,
-    };
-
-    pub fn handleImportedVariable(self: *Self, first: FirstExportedVariable, second: dv.SecondExportedVariable) !void {
+    pub inline fn handleImportedVariable(self: *Self, first: FirstExportedVariable, second: dv.SecondExportedVariable) !void {
         var params_json = std.ArrayList(u8).init(self.allocator);
         defer params_json.deinit();
         try std.json.stringify(.{.first = first, .second = second}, .{}, params_json.writer());
@@ -54,12 +48,11 @@ pub const ImportedVariableActorProxy = struct {
             .method_id = 0,
             .params = params_str,
         };
-        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
+        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 
-    pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
-        if (method_call.method_id >= 1) {
-            return error.UnknownMethod;
-        }
-        try method_table[method_call.method_id](self, method_call.params);
+    pub inline fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
+        return switch (method_call.method_id) {            0 => methodWrapper0(self, method_call.params),
+            else => error.UnknownMethod,
+        };
     }
 };

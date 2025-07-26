@@ -659,21 +659,15 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
 }
 
 fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: []const MethodInfo, struct_name: []const u8, file_content: []const u8, types_to_import: *std.StringHashMap(void)) !void {
-    try writer.print("    const MethodFn = *const fn (*Self, []const u8) anyerror!void;\n\n", .{});
-
+    // Generate inline method wrappers (no function pointer table needed anymore)
     for (methods, 0..) |method, i| {
         try generateMethodWrapper(allocator, writer, method, i, struct_name, file_content, types_to_import);
     }
-
-    try writer.print("    const method_table = [_]MethodFn{{\n", .{});
-    for (methods, 0..) |_, i| {
-        try writer.print("        methodWrapper{d},\n", .{i});
-    }
-    try writer.writeAll("    };\n\n");
 }
 
 fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: MethodInfo, index: usize, struct_name: []const u8, file_content: []const u8, types_to_import: *std.StringHashMap(void)) !void {
-    try writer.print("    fn methodWrapper{d}(self: *Self, params_json: []const u8) !void {{\n", .{index});
+    // Add inline for performance - eliminates function call overhead
+    try writer.print("    inline fn methodWrapper{d}(self: *Self, params_json: []const u8) !void {{\n", .{index});
 
     const param_names = try extractParamNames(allocator, method.params);
     defer {
@@ -722,7 +716,7 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
         try writer.writeAll("        }, std.heap.page_allocator, params_json, .{});\n");
         try writer.writeAll("        defer params.deinit();\n");
 
-        try writer.print("        try self.underlying.{s}(", .{method.name});
+        try writer.print("        return self.underlying.{s}(", .{method.name});
         for (param_names, 0..) |name, i| {
             if (i > 0) try writer.writeAll(", ");
             try writer.print("params.value.{s}", .{name});
@@ -730,7 +724,7 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
         try writer.writeAll(");\n");
     } else {
         try writer.writeAll("        _ = params_json;\n");
-        try writer.print("        try self.underlying.{s}();\n", .{method.name});
+        try writer.print("        return self.underlying.{s}();\n", .{method.name});
     }
 
     try writer.writeAll("    }\n\n");
@@ -747,7 +741,8 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
         allocator.free(param_names);
     }
 
-    try writer.print("    pub fn {s}(self: *Self", .{method_info.name});
+    // Add inline for performance - eliminates function call overhead
+    try writer.print("    pub inline fn {s}(self: *Self", .{method_info.name});
 
     if (method_info.params.len > 0) {
         var param_split = std.mem.splitAny(u8, method_info.params, ",");
@@ -808,20 +803,27 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
         \\            .method_id = {d},
         \\            .params = params_str,
         \\        }};
-        \\        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
+        \\        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
     , .{method_index});
 
     try writer.writeAll("    }\n\n");
 }
 
 fn generateDispatchFunction(writer: anytype, method_count: usize) !void {
+    // Use comptime dispatch instead of function pointer table for better performance
     try writer.print(
-        \\    pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {{
-        \\        if (method_call.method_id >= {d}) {{
-        \\            return error.UnknownMethod;
-        \\        }}
-        \\        try method_table[method_call.method_id](self, method_call.params);
+        \\    pub inline fn dispatchMethod(self: *Self, method_call: MethodCall) !void {{
+        \\        return switch (method_call.method_id) {{
+    , .{});
+
+    for (0..method_count) |i| {
+        try writer.print("            {d} => methodWrapper{d}(self, method_call.params),\n", .{ i, i });
+    }
+
+    try writer.print(
+        \\            else => error.UnknownMethod,
+        \\        }};
         \\    }}
         \\
-    , .{method_count});
+    , .{});
 }

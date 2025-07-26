@@ -27,21 +27,15 @@ pub const ReceiverActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    const MethodFn = *const fn (*Self, []const u8) anyerror!void;
-
-    fn methodWrapper0(self: *Self, params_json: []const u8) !void {
+    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
         const params = try std.json.parseFromSlice(struct {
             message: []const u8,
         }, std.heap.page_allocator, params_json, .{});
         defer params.deinit();
-        try self.underlying.receiveMessage(params.value.message);
+        return self.underlying.receiveMessage(params.value.message);
     }
 
-    const method_table = [_]MethodFn{
-        methodWrapper0,
-    };
-
-    pub fn receiveMessage(self: *Self, message: []const u8) !void {
+    pub inline fn receiveMessage(self: *Self, message: []const u8) !void {
         var params_json = std.ArrayList(u8).init(self.allocator);
         defer params_json.deinit();
         try std.json.stringify(.{.message = message}, .{}, params_json.writer());
@@ -51,12 +45,11 @@ pub const ReceiverActorProxy = struct {
             .method_id = 0,
             .params = params_str,
         };
-        try self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
+        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 
-    pub fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
-        if (method_call.method_id >= 1) {
-            return error.UnknownMethod;
-        }
-        try method_table[method_call.method_id](self, method_call.params);
+    pub inline fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
+        return switch (method_call.method_id) {            0 => methodWrapper0(self, method_call.params),
+            else => error.UnknownMethod,
+        };
     }
 };
