@@ -1,11 +1,10 @@
 const std = @import("std");
 
 pub const MessageType = enum(u8) {
-    send = 0,
-    publish = 1,
-    subscribe = 2,
-    unsubscribe = 3,
-    poison_pill = 4,
+    publish = 0,
+    subscribe = 1,
+    unsubscribe = 2,
+    poison_pill = 3,
     method_call = 5,
 };
 

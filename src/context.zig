@@ -87,15 +87,6 @@ pub const Context = struct {
         try self.engine.poisonPill(self.actor_id);
     }
 
-    pub fn send(self: *const Self, target_id: []const u8, message: anytype) !void {
-        try engine_internal.enqueueMessage(
-            self.engine,
-            self.actor_id,
-            target_id,
-            .send,
-            message,
-        );
-    }
     pub fn dispatchMethodCall(self: *const Self, target_id: []const u8, message: anytype) !void {
         try engine_internal.enqueueMessage(
             self.engine,

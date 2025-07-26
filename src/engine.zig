@@ -86,19 +86,6 @@ pub const Engine = struct {
         return unsafeAnyOpaqueCast(ActorType, actor_interface.impl);
     }
 
-    pub fn send(
-        self: *Self,
-        target_id: []const u8,
-        message: anytype,
-    ) !void {
-        return internal.enqueueMessage(
-            self,
-            null,
-            target_id,
-            .send,
-            message,
-        );
-    }
     pub fn publish(
         self: *Self,
         target_id: []const u8,

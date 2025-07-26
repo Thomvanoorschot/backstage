@@ -133,7 +133,7 @@ pub const ActorInterface = struct {
                         std.log.err("Tried to dispatch method call but failed: {s}", .{@errorName(err)});
                     };
                 },
-                .send, .publish => {
+                .publish => {
                     // self.receiveFnPtr(self.impl, envelope) catch |err| {
                     //     std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
                     // };
