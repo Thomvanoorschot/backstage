@@ -21,7 +21,7 @@ pub fn build(b: *Build) void {
         "imported_variable",
         "multiple_messages",
         "poison_pill",
-        "pub_sub",
+        // "pub_sub",
     };
 
     const test_step = b.step("test", "Run all tests");

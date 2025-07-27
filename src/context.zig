@@ -22,11 +22,11 @@ pub const Context = struct {
     child_actors: std.StringHashMap(*ActorInterface),
     timer_completions: std.ArrayList(*xev.Completion),
 
-    // This is who is subscribed to this actor stored as topic:sender_id
-    topic_subscriptions: std.StringHashMap(std.StringHashMap(void)),
+    // // This is who is subscribed to this actor stored as topic:sender_id
+    // topic_subscriptions: std.StringHashMap(std.StringHashMap(void)),
 
-    // This is who this actor is subscribed to stored as target_id:topic
-    subscribed_to_actors: std.StringHashMap(std.StringHashMap(void)),
+    // // This is who this actor is subscribed to stored as target_id:topic
+    // subscribed_to_actors: std.StringHashMap(std.StringHashMap(void)),
 
     const Self = @This();
     pub fn init(allocator: Allocator, engine: *Engine, actor: *ActorInterface, actor_id: []const u8) !*Self {
@@ -38,8 +38,8 @@ pub const Context = struct {
             .parent_actor = null,
             .actor = actor,
             .actor_id = actor_id,
-            .topic_subscriptions = std.StringHashMap(std.StringHashMap(void)).init(allocator),
-            .subscribed_to_actors = std.StringHashMap(std.StringHashMap(void)).init(allocator),
+            // .topic_subscriptions = std.StringHashMap(std.StringHashMap(void)).init(allocator),
+            // .subscribed_to_actors = std.StringHashMap(std.StringHashMap(void)).init(allocator),
             .timer_completions = std.ArrayList(*xev.Completion).init(allocator),
         };
         return self;
@@ -49,23 +49,23 @@ pub const Context = struct {
         // Cancel and cleanup timer completions
         self.deinitTimers();
 
-        var topic_it = self.topic_subscriptions.iterator();
-        while (topic_it.next()) |entry| {
-            entry.value_ptr.deinit();
-        }
-        self.topic_subscriptions.deinit();
+        // var topic_it = self.topic_subscriptions.iterator();
+        // while (topic_it.next()) |entry| {
+        //     entry.value_ptr.deinit();
+        // }
+        // self.topic_subscriptions.deinit();
 
-        var sub_it = self.subscribed_to_actors.iterator();
-        while (sub_it.next()) |entry| {
-            var sub_topic_it = entry.value_ptr.keyIterator();
-            while (sub_topic_it.next()) |topic| {
-                self.engine.unsubscribeFromActorTopic(self.actor_id, entry.key_ptr.*, topic.*) catch |err| {
-                    std.log.warn("Failed to unsubscribe from {s} topic {s}: {}", .{ entry.key_ptr.*, topic.*, err });
-                };
-            }
-            entry.value_ptr.deinit();
-        }
-        self.subscribed_to_actors.deinit();
+        // var sub_it = self.subscribed_to_actors.iterator();
+        // while (sub_it.next()) |entry| {
+        //     var sub_topic_it = entry.value_ptr.keyIterator();
+        //     while (sub_topic_it.next()) |topic| {
+        //         self.engine.unsubscribeFromActorTopic(self.actor_id, entry.key_ptr.*, topic.*) catch |err| {
+        //             std.log.warn("Failed to unsubscribe from {s} topic {s}: {}", .{ entry.key_ptr.*, topic.*, err });
+        //         };
+        //     }
+        //     entry.value_ptr.deinit();
+        // }
+        // self.subscribed_to_actors.deinit();
 
         // // Cleanup child actors
         var child_it = self.child_actors.valueIterator();

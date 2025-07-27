@@ -9,6 +9,7 @@ const build_options = @import("build_options");
 const ispct = @import("inspector/inspector.zig");
 const zignite = if (build_options.enable_inspector) @import("zignite") else {};
 const internal = @import("engine_internal.zig");
+const strm_registry = @import("stream_registry.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -16,11 +17,15 @@ const ActorInterface = act.ActorInterface;
 const Context = actor_ctx.Context;
 const MessageType = envlp.MessageType;
 const Envelope = envlp.Envelope;
+const MethodCall = envlp.MethodCall;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
 const Inspector = ispct.Inspector;
+const StreamRegistry = strm_registry.StreamRegistry;
+const StreamSubscribeRequest = strm_registry.StreamSubscribeRequest;
 
 pub const Engine = struct {
     registry: Registry,
+    stream_registry: StreamRegistry,
     allocator: Allocator,
     loop: xev.Loop,
     inspector: ?*Inspector = null,
@@ -32,6 +37,7 @@ pub const Engine = struct {
             .allocator = allocator,
             .loop = try xev.Loop.init(.{}),
             .registry = registry,
+            .stream_registry = StreamRegistry.init(allocator),
             .inspector = inspector,
         };
     }
@@ -56,6 +62,7 @@ pub const Engine = struct {
             internal.deinitActorByReference(self, entry.value_ptr.*);
         }
         self.registry.deinit();
+        self.stream_registry.deinit();
     }
 
     pub fn getActor(self: *Self, comptime ActorType: type, id: []const u8) !*ActorType {
@@ -86,48 +93,24 @@ pub const Engine = struct {
         return unsafeAnyOpaqueCast(ActorType, actor_interface.impl);
     }
 
-    pub fn publish(
-        self: *Self,
-        target_id: []const u8,
-        message: anytype,
-    ) !void {
-        return internal.enqueueMessage(
-            self,
-            null,
-            target_id,
-            .publish,
-            message,
-        );
+    pub fn publishToStream(self: *Engine, stream_id: []const u8, encoded_data: []const u8) !void {
+        const subscriptions = self.stream_registry.getSubscriptions(stream_id);
+        for (subscriptions) |subscription| {
+            try internal.enqueueMessage(
+                self,
+                null,
+                subscription.actor_id,
+                .method_call,
+                MethodCall{
+                    .method_id = subscription.method_id,
+                    .params = encoded_data,
+                },
+            );
+        }
     }
 
-    pub fn subscribeToActorTopic(
-        self: *Self,
-        sender_id: []const u8,
-        target_id: []const u8,
-        topic: []const u8,
-    ) !void {
-        return internal.enqueueMessage(
-            self,
-            sender_id,
-            target_id,
-            .subscribe,
-            topic,
-        );
-    }
-
-    pub fn unsubscribeFromActorTopic(
-        self: *Self,
-        sender_id: []const u8,
-        target_id: []const u8,
-        topic: []const u8,
-    ) !void {
-        return internal.enqueueMessage(
-            self,
-            sender_id,
-            target_id,
-            .unsubscribe,
-            topic,
-        );
+    pub fn subscribeToStream(self: *Engine, request: StreamSubscribeRequest) !void {
+        return try self.stream_registry.subscribe(request);
     }
 
     pub fn poisonPill(self: *Self, target_id: []const u8) !void {
