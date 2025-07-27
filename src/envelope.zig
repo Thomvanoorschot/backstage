@@ -13,7 +13,6 @@ pub const MethodCall = struct {
     params: []const u8,
 
     pub fn encode(self: *const MethodCall, allocator: std.mem.Allocator) ![]u8 {
-        // Format: method_id (4 bytes) + params
         const total_len = 4 + self.params.len;
         var result = try allocator.alloc(u8, total_len);
 
