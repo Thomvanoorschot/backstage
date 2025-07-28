@@ -5,6 +5,7 @@ const eng = @import("engine.zig");
 const xev = @import("xev");
 const type_utils = @import("type_utils.zig");
 const engine_internal = @import("engine_internal.zig");
+const strm = @import("stream.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -12,6 +13,7 @@ const ActorInterface = act.ActorInterface;
 const Engine = eng.Engine;
 const ActorOptions = eng.ActorOptions;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
+const StreamHandle = strm.StreamHandle;
 
 pub const Context = struct {
     allocator: Allocator,
@@ -97,66 +99,74 @@ pub const Context = struct {
         );
     }
 
-    pub fn publish(self: *const Self, message: anytype) !void {
-        try self.publishToTopic("default", message);
+    pub fn publishToStream(self: *const Self, stream_id: []const u8, message: anytype) !void {
+        try self.engine.publishToStream(stream_id, message);
     }
 
-    pub fn publishToTopic(self: *const Self, topic: []const u8, message: anytype) !void {
-        if (self.topic_subscriptions.get(topic)) |subscribers| {
-            var it = subscribers.keyIterator();
-            while (it.next()) |id| {
-                try engine_internal.enqueueMessage(
-                    self.engine,
-                    self.actor_id,
-                    id.*,
-                    .publish,
-                    message,
-                );
-            }
-        }
-    }
-    pub fn subscribeToActor(self: *Self, target_id: []const u8) !void {
-        try self.subscribeToActorTopic(target_id, "default");
+    pub fn getStream(self: *const Self, comptime PayloadType: type, id: []const u8) !*StreamHandle(PayloadType) {
+        return try self.engine.getStream(PayloadType, id);
     }
 
-    pub fn subscribeToActorTopic(self: *Self, target_id: []const u8, topic: []const u8) !void {
-        var topics = self.subscribed_to_actors.getPtr(target_id);
-        if (topics == null) {
-            const owned_target_id = try self.allocator.dupe(u8, target_id);
-            try self.subscribed_to_actors.put(owned_target_id, std.StringHashMap(void).init(self.allocator));
-            topics = self.subscribed_to_actors.getPtr(owned_target_id);
-        }
-        if (topics.?.get(topic) != null) {
-            return;
-        }
-        const owned_topic = try self.allocator.dupe(u8, topic);
-        try topics.?.put(owned_topic, {});
+    // pub fn publish(self: *const Self, message: anytype) !void {
+    //     try self.publishToTopic("default", message);
+    // }
 
-        try self.engine.subscribeToActorTopic(self.actor_id, target_id, topic);
-    }
+    // pub fn publishToTopic(self: *const Self, topic: []const u8, message: anytype) !void {
+    //     if (self.topic_subscriptions.get(topic)) |subscribers| {
+    //         var it = subscribers.keyIterator();
+    //         while (it.next()) |id| {
+    //             try engine_internal.enqueueMessage(
+    //                 self.engine,
+    //                 self.actor_id,
+    //                 id.*,
+    //                 .publish,
+    //                 message,
+    //             );
+    //         }
+    //     }
+    // }
+    // pub fn subscribeToActor(self: *Self, target_id: []const u8) !void {
+    //     try self.subscribeToActorTopic(target_id, "default");
+    // }
 
-    pub fn unsubscribeFromActor(self: *Self, target_id: []const u8) !void {
-        try self.unsubscribeFromActorTopic(target_id, "default");
-    }
+    // pub fn subscribeToActorTopic(self: *Self, target_id: []const u8, topic: []const u8) !void {
+    //     var topics = self.subscribed_to_actors.getPtr(target_id);
+    //     if (topics == null) {
+    //         const owned_target_id = try self.allocator.dupe(u8, target_id);
+    //         try self.subscribed_to_actors.put(owned_target_id, std.StringHashMap(void).init(self.allocator));
+    //         topics = self.subscribed_to_actors.getPtr(owned_target_id);
+    //     }
+    //     if (topics.?.get(topic) != null) {
+    //         return;
+    //     }
+    //     const owned_topic = try self.allocator.dupe(u8, topic);
+    //     try topics.?.put(owned_topic, {});
 
-    pub fn unsubscribeFromActorTopic(self: *Self, target_id: []const u8, topic: []const u8) !void {
-        try self.engine.unsubscribeFromActorTopic(self.actor_id, target_id, topic);
-        var topics = self.subscribed_to_actors.get(target_id);
-        if (topics == null) {
-            return error.TargetIdDoesNotExist;
-        }
+    //     try self.engine.subscribeToActorTopic(self.actor_id, target_id, topic);
+    // }
 
-        if (topics.?.fetchRemove(topic)) |owned_topic| {
-            self.allocator.free(owned_topic.key);
-        }
+    // pub fn unsubscribeFromActor(self: *Self, target_id: []const u8) !void {
+    //     try self.unsubscribeFromActorTopic(target_id, "default");
+    // }
 
-        if (topics.?.count() == 0) {
-            if (self.subscribed_to_actors.fetchRemove(target_id)) |owned_target_id| {
-                self.allocator.free(owned_target_id.key);
-            }
-            topics.?.deinit();
-        }
-    }
+    // pub fn unsubscribeFromActorTopic(self: *Self, target_id: []const u8, topic: []const u8) !void {
+    //     try self.engine.unsubscribeFromActorTopic(self.actor_id, target_id, topic);
+    //     var topics = self.subscribed_to_actors.get(target_id);
+    //     if (topics == null) {
+    //         return error.TargetIdDoesNotExist;
+    //     }
+
+    //     if (topics.?.fetchRemove(topic)) |owned_topic| {
+    //         self.allocator.free(owned_topic.key);
+    //     }
+
+    //     if (topics.?.count() == 0) {
+    //         if (self.subscribed_to_actors.fetchRemove(target_id)) |owned_target_id| {
+    //             self.allocator.free(owned_target_id.key);
+    //         }
+    //         topics.?.deinit();
+    //     }
+    // }
 
     pub fn getLoop(self: *const Self) *xev.Loop {
         return &self.engine.loop;

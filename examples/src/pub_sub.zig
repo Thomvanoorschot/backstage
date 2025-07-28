@@ -24,7 +24,10 @@ pub const PubActor = struct {
     }
 
     pub fn publish(self: *Self, message: []const u8) !void {
-        try self.ctx.publish(message);
+        const stream = try self.ctx.getStream([]const u8, "test");
+        _ = stream;
+        _ = message;
+        // try stream.onNext(message);
     }
 
     pub fn deinit(_: *Self) !void {}
@@ -46,7 +49,8 @@ pub const SubActor = struct {
     }
 
     pub fn subscribe(self: *Self) !void {
-        try self.ctx.subscribeToActor("pub_actor");
+        _ = self;
+        // try self.ctx.subscribeToActor("pub_actor");
     }
 
     pub fn deinit(_: *Self) !void {}

@@ -1,24 +1,16 @@
 const std = @import("std");
+const strm = @import("stream.zig");
 
-const StreamSubscription = struct {
-    actor_id: []const u8,
-    method_id: u32,
-};
-
-const StreamSubscribeRequest = struct {
-    stream_id: []const u8,
-    actor_id: []const u8,
-    method_id: u32,
-};
+const Stream = strm.Stream;
 
 pub const StreamRegistry = struct {
     allocator: std.mem.Allocator,
-    streams: std.StringHashMap(std.ArrayList(StreamSubscription)),
+    streams: std.StringHashMap(*Stream),
 
     pub fn init(allocator: std.mem.Allocator) StreamRegistry {
         return .{
             .allocator = allocator,
-            .streams = std.StringHashMap(std.ArrayList(StreamSubscription)).init(allocator),
+            .streams = std.StringHashMap(*Stream).init(allocator),
         };
     }
 
@@ -26,39 +18,17 @@ pub const StreamRegistry = struct {
         var it = self.streams.iterator();
         while (it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
-            for (entry.value_ptr.items) |subscription| {
-                self.allocator.free(subscription.actor_id);
-            }
-            entry.value_ptr.deinit();
+            entry.value_ptr.*.deinit();
+            self.allocator.destroy(entry.value_ptr.*);
         }
         self.streams.deinit();
     }
-
-    pub fn subscribe(self: *StreamRegistry, request: StreamSubscribeRequest) !void {
-        var subscriptions = self.streams.getPtr(request.stream_id);
-        if (subscriptions == null) {
-            try self.streams.put(request.stream_id, std.ArrayList(StreamSubscription).init(self.allocator));
-            subscriptions = self.streams.getPtr(request.stream_id);
-        } else {
-            self.allocator.free(request.stream_id);
-        }
-
-        // Check if already subscribed
-        for (subscriptions.?.items) |existing_subscription| {
-            if (std.mem.eql(u8, existing_subscription.actor_id, request.actor_id) and existing_subscription.method_id == request.method_id) return;
-        }
-
-        const owned_actor_id = try self.allocator.dupe(u8, request.actor_id);
-        try subscriptions.?.append(.{
-            .actor_id = owned_actor_id,
-            .method_id = request.method_id,
-        });
+    pub fn add(self: *StreamRegistry, stream_id: []const u8, stream: *Stream) !void {
+        const owned_id = try self.allocator.dupe(u8, stream_id);
+        try self.streams.put(owned_id, stream);
     }
 
-    pub fn getSubscriptions(self: *StreamRegistry, stream_id: []const u8) []const StreamSubscription {
-        if (self.streams.get(stream_id)) |subscriptions| {
-            return subscriptions.items;
-        }
-        return &[_]StreamSubscription{};
+    pub fn getByID(self: *StreamRegistry, stream_id: []const u8) ?*Stream {
+        return self.streams.get(stream_id);
     }
 };

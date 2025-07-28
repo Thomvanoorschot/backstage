@@ -10,6 +10,7 @@ const ispct = @import("inspector/inspector.zig");
 const zignite = if (build_options.enable_inspector) @import("zignite") else {};
 const internal = @import("engine_internal.zig");
 const strm_registry = @import("stream_registry.zig");
+const strm = @import("stream.zig");
 
 const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
@@ -22,6 +23,8 @@ const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
 const Inspector = ispct.Inspector;
 const StreamRegistry = strm_registry.StreamRegistry;
 const StreamSubscribeRequest = strm_registry.StreamSubscribeRequest;
+const Stream = strm.Stream;
+const StreamHandle = strm.StreamHandle;
 
 pub const Engine = struct {
     registry: Registry,
@@ -51,8 +54,8 @@ pub const Engine = struct {
             self.inspector.?.deinit();
         }
         self.loop.deinit();
-        var it = self.registry.actorsIDMap.iterator();
-        while (it.next()) |entry| {
+        var actor_it = self.registry.actorsIDMap.iterator();
+        while (actor_it.next()) |entry| {
             // We are calling the deinit function for the actor implementation here.
             // Normally the deinit function is called on the actor interface itself,
             // but the engine itself is being deinitialized.
@@ -93,6 +96,16 @@ pub const Engine = struct {
         return unsafeAnyOpaqueCast(ActorType, actor_interface.impl);
     }
 
+    pub fn getStream(self: *Engine, comptime PayloadType: type, id: []const u8) !*StreamHandle(PayloadType) {
+        const entry = self.stream_registry.getByID(id);
+        if (entry) |e| {
+            return unsafeAnyOpaqueCast(StreamHandle(PayloadType), e.handle_ptr);
+        }
+        const stream = try Stream.init(self.allocator, self, id, PayloadType);
+        try self.stream_registry.add(id, stream);
+        return unsafeAnyOpaqueCast(StreamHandle(PayloadType), stream.handle_ptr);
+    }
+
     pub fn publishToStream(self: *Engine, stream_id: []const u8, encoded_data: []const u8) !void {
         const subscriptions = self.stream_registry.getSubscriptions(stream_id);
         for (subscriptions) |subscription| {
@@ -108,11 +121,6 @@ pub const Engine = struct {
             );
         }
     }
-
-    pub fn subscribeToStream(self: *Engine, request: StreamSubscribeRequest) !void {
-        return try self.stream_registry.subscribe(request);
-    }
-
     pub fn poisonPill(self: *Self, target_id: []const u8) !void {
         return internal.enqueueMessage(
             self,
