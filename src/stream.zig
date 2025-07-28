@@ -13,6 +13,7 @@ pub const Stream = struct {
     handle_ptr: *anyopaque,
     subscribers: std.ArrayList(Subscriber),
     engine: *Engine,
+    deinit_impl_fn: *const fn (std.mem.Allocator, *anyopaque) void,
 
     const Self = @This();
 
@@ -23,17 +24,63 @@ pub const Stream = struct {
         comptime PayloadType: type,
     ) !*Self {
         const self = try allocator.create(Self);
+
+        const StreamImpl = struct {
+            pub fn onNext(self_: *anyopaque, payload: PayloadType) !void {
+                const stream = unsafeAnyOpaqueCast(Stream, self_);
+
+                // TODO Change the way payloads are encoded and handled
+                const payload_bytes = if (PayloadType == []const u8)
+                    payload
+                else
+                    @as([]const u8, @ptrCast(&payload))[0..@sizeOf(PayloadType)];
+
+                // TODO Move this temporary solution to a more appropriate place
+                var params_json = std.ArrayList(u8).init(stream.allocator);
+                defer params_json.deinit();
+                try std.json.stringify(.{ .message = payload_bytes }, .{}, params_json.writer());
+                const params_str = try params_json.toOwnedSlice();
+                defer stream.allocator.free(params_str);
+
+                for (stream.subscribers.items) |subscription| {
+                    try engine_internal.enqueueMessage(
+                        stream.engine,
+                        null,
+                        subscription.actor_id,
+                        .method_call,
+                        MethodCall{
+                            .method_id = subscription.method_id,
+                            .params = params_str,
+                        },
+                    );
+                }
+            }
+
+            pub fn subscribe(self_: *anyopaque, subscriber: Subscriber) !void {
+                const stream = unsafeAnyOpaqueCast(Stream, self_);
+                try stream.subscribers.append(subscriber);
+            }
+
+            pub fn deinit(alloc: std.mem.Allocator, handle_ptr: *anyopaque) void {
+                const handle = unsafeAnyOpaqueCast(StreamHandle(PayloadType), handle_ptr);
+                alloc.destroy(handle);
+            }
+        };
+
+        const handle = try allocator.create(StreamHandle(PayloadType));
+        handle.* = try StreamHandle(PayloadType).init(
+            id,
+            self,
+            StreamImpl.onNext,
+            StreamImpl.subscribe,
+        );
+
         self.* = .{
             .allocator = allocator,
-            .handle_ptr = try StreamHandle(PayloadType).init(
-                allocator,
-                id,
-                self,
-                onNext,
-                subscribe,
-            ),
+            .handle_ptr = handle,
             .subscribers = std.ArrayList(Subscriber).init(allocator),
             .engine = engine,
+            .deinit_impl_fn = StreamImpl.deinit,
         };
 
         return self;
@@ -41,33 +88,7 @@ pub const Stream = struct {
 
     pub fn deinit(self: *Self) void {
         self.subscribers.deinit();
-        // self.allocator.destroy(self.handle_ptr);
-    }
-
-    pub fn onNext(self_: *anyopaque, payload: []const u8) !void {
-        const self = unsafeAnyOpaqueCast(Self, self_);
-
-        for (self.subscribers.items) |subscription| {
-            try engine_internal.enqueueMessage(
-                self.engine,
-                null,
-                subscription.actor_id,
-                .method_call,
-                MethodCall{
-                    .method_id = subscription.method_id,
-                    .params = payload,
-                },
-            );
-        }
-        // const encoded = try encodeStreamMessage(T, item, self.provider.engine.allocator);
-        // defer self.provider.engine.allocator.free(encoded);
-
-        // try self.provider.engine.publishToStream(self.stream_id, self.namespace, encoded);
-    }
-
-    pub fn subscribe(self_: *anyopaque, subscriber: Subscriber) !void {
-        const self = unsafeAnyOpaqueCast(Self, self_);
-        try self.subscribers.append(subscriber);
+        self.deinit_impl_fn(self.allocator, self.handle_ptr);
     }
 };
 
@@ -80,32 +101,27 @@ pub fn StreamHandle(comptime PayloadType: type) type {
     return struct {
         id: []const u8,
         stream_ptr: *anyopaque,
-        on_next_fn: *const fn (*anyopaque, []const u8) anyerror!void,
+        on_next_fn: *const fn (*anyopaque, PayloadType) anyerror!void,
         subscribe_fn: *const fn (*anyopaque, Subscriber) anyerror!void,
 
         const Self = @This();
 
         pub fn init(
-            allocator: std.mem.Allocator,
             id: []const u8,
             ptr: *anyopaque,
             on_next_fn: *const fn (self: *anyopaque, item: PayloadType) anyerror!void,
             subscribe_fn: *const fn (self: *anyopaque, subscriber: Subscriber) anyerror!void,
-        ) !*Self {
-            const self = try allocator.create(Self);
-            self.* = .{
+        ) !Self {
+            return .{
                 .id = id,
                 .stream_ptr = ptr,
                 .on_next_fn = on_next_fn,
                 .subscribe_fn = subscribe_fn,
             };
-            return self;
         }
 
         pub fn onNext(self: *Self, payload: PayloadType) !void {
-            _ = payload;
-            // TODO Encode payload
-            try self.on_next_fn(self.stream_ptr, "TODO");
+            try self.on_next_fn(self.stream_ptr, payload);
         }
 
         pub fn subscribe(self: *Self, subscriber: Subscriber) !void {

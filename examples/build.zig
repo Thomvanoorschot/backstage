@@ -37,8 +37,20 @@ pub fn build(b: *Build) void {
         b.installArtifact(example);
 
         const run = b.addRunArtifact(example);
-        b.step(example_name, "Run " ++ example_name).dependOn(&run.step);
-
-        test_step.dependOn(&run.step);
+        const test_install = b.addInstallArtifact(
+            example,
+            .{
+                .dest_dir = .{
+                    .override = .{
+                        .custom = "tests",
+                    },
+                },
+                .dest_sub_path = example_name,
+            },
+        );
+        var run_step = b.step(example_name, "Run " ++ example_name);
+        run_step.dependOn(&run.step);
+        run_step.dependOn(&test_install.step);
+        test_step.dependOn(run_step);
     }
 }

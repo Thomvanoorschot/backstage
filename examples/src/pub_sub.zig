@@ -25,9 +25,7 @@ pub const PubActor = struct {
 
     pub fn publish(self: *Self, message: []const u8) !void {
         const stream = try self.ctx.getStream([]const u8, "test");
-        _ = stream;
-        _ = message;
-        // try stream.onNext(message);
+        try stream.onNext(message);
     }
 
     pub fn deinit(_: *Self) !void {}
@@ -49,8 +47,16 @@ pub const SubActor = struct {
     }
 
     pub fn subscribe(self: *Self) !void {
-        _ = self;
-        // try self.ctx.subscribeToActor("pub_actor");
+        const stream = try self.ctx.getStream([]const u8, "test");
+        //TODO The way we have to set the subscriber sucks, but it's a temporary solution
+        try stream.subscribe(.{
+            .actor_id = "sub_actor",
+            .method_id = 1,
+        });
+    }
+
+    pub fn handleMessage(_: *Self, message: []const u8) !void {
+        std.log.info("Received message: {s}", .{message});
     }
 
     pub fn deinit(_: *Self) !void {}
