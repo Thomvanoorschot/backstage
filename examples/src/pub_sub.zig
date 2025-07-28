@@ -26,7 +26,7 @@ pub const PubActor = struct {
 
     pub fn publish(self: *Self, message: []const u8) !void {
         const stream = try self.ctx.getStream([]const u8, "test");
-        try stream.onNext(message);
+        try stream.next(message);
     }
 
     pub fn deinit(_: *Self) !void {}

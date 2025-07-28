@@ -101,7 +101,7 @@ pub fn StreamHandle(comptime PayloadType: type) type {
     return struct {
         id: []const u8,
         stream_ptr: *anyopaque,
-        on_next_fn: *const fn (*anyopaque, PayloadType) anyerror!void,
+        next_fn: *const fn (*anyopaque, PayloadType) anyerror!void,
         subscribe_fn: *const fn (*anyopaque, Subscriber) anyerror!void,
 
         const Self = @This();
@@ -115,13 +115,13 @@ pub fn StreamHandle(comptime PayloadType: type) type {
             return .{
                 .id = id,
                 .stream_ptr = ptr,
-                .on_next_fn = on_next_fn,
+                .next_fn = on_next_fn,
                 .subscribe_fn = subscribe_fn,
             };
         }
 
-        pub fn onNext(self: *Self, payload: PayloadType) !void {
-            try self.on_next_fn(self.stream_ptr, payload);
+        pub fn next(self: *Self, payload: PayloadType) !void {
+            try self.next_fn(self.stream_ptr, payload);
         }
 
         pub fn subscribe(self: *Self, subscriber: Subscriber) !void {
