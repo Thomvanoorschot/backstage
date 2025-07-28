@@ -2,19 +2,19 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
-const SubActor = @import("../pub_sub.zig").SubActor;
+const SubOneActor = @import("../pub_sub.zig").SubOneActor;
 
-pub const SubActorProxy = struct {
+pub const SubOneActorProxy = struct {
     pub const is_proxy = true;
     ctx: *Context,
     allocator: std.mem.Allocator,
-    underlying: *SubActor,
+    underlying: *SubOneActor,
     
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
         const self = try allocator.create(Self);
-        const underlying = try SubActor.init(ctx, allocator);
+        const underlying = try SubOneActor.init(ctx, allocator);
         self.* = .{
             .ctx = ctx,
             .allocator = allocator,
