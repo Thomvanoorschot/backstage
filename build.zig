@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
         generator_options.addOption([]const u8, "output_dir", proxy_output_dir);
 
         generator_exe.root_module.addImport("build_options", generator_options.createModule());
-        
+
         const run_generator = b.addRunArtifact(generator_exe);
         const gen_proxies = b.step("gen-proxies", "Generate actor proxies");
         gen_proxies.dependOn(&run_generator.step);
@@ -41,6 +41,12 @@ pub fn build(b: *std.Build) void {
 
     const xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
     backstage_mod.addImport("xev", xev.module("xev"));
+
+    const zbor_dep = b.dependency("zbor", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    backstage_mod.addImport("zbor", zbor_dep.module("zbor"));
 
     const zignite_dep = b.lazyDependency("zignite", .{ .target = target, .optimize = optimize });
     if (zignite_dep) |zd| {

@@ -3,10 +3,12 @@ const type_utils = @import("type_utils.zig");
 const engine_internal = @import("engine_internal.zig");
 const envlp = @import("envelope.zig");
 const eng = @import("engine.zig");
+const zbor = @import("zbor");
 
 const Engine = eng.Engine;
 const MethodCall = envlp.MethodCall;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
+const stringify = zbor.stringify;
 
 pub const Stream = struct {
     allocator: std.mem.Allocator,
@@ -28,19 +30,10 @@ pub const Stream = struct {
         const StreamImpl = struct {
             pub fn onNext(self_: *anyopaque, payload: PayloadType) !void {
                 const stream = unsafeAnyOpaqueCast(Stream, self_);
-
-                // TODO Change the way payloads are encoded and handled
-                const payload_bytes = if (PayloadType == []const u8)
-                    payload
-                else
-                    @as([]const u8, @ptrCast(&payload))[0..@sizeOf(PayloadType)];
-
-                // TODO Move this temporary solution to a more appropriate place
-                var params_json = std.ArrayList(u8).init(stream.allocator);
-                defer params_json.deinit();
-                try std.json.stringify(.{ .message = payload_bytes }, .{}, params_json.writer());
-                const params_str = try params_json.toOwnedSlice();
-                defer stream.allocator.free(params_str);
+                var str = std.ArrayList(u8).init(stream.allocator);
+                defer str.deinit();
+                // TODO We dont know if the first key is going to be message or not
+                try stringify(.{ .message = payload }, .{}, str.writer());
 
                 for (stream.subscribers.items) |subscription| {
                     try engine_internal.enqueueMessage(
@@ -50,7 +43,7 @@ pub const Stream = struct {
                         .method_call,
                         MethodCall{
                             .method_id = subscription.method_id,
-                            .params = params_str,
+                            .params = str.items,
                         },
                     );
                 }

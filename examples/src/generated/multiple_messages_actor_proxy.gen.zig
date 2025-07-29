@@ -2,6 +2,9 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
+const zborParse = backstage.zborParse;
+const zborStringify = backstage.zborStringify;
+const zborDataItem = backstage.zborDataItem;
 const MultipleMessagesActor = @import("../multiple_messages.zig").MultipleMessagesActor;
 const HelloWorldStruct = @import("../multiple_messages.zig").HelloWorldStruct;
 
@@ -28,23 +31,20 @@ pub const MultipleMessagesActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
-        const params = try std.json.parseFromSlice(struct {
+    inline fn methodWrapper0(self: *Self, params: []const u8) !void {
+        const result = try zborParse(struct {
             unused_param1: HelloWorldStruct,
-        }, std.heap.page_allocator, params_json, .{});
-        defer params.deinit();
-        return self.underlying.logHelloWorld(params.value.unused_param1);
+        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.logHelloWorld(result.unused_param1);
     }
 
     pub inline fn logHelloWorld(self: *Self, unused_param1: HelloWorldStruct) !void {
-        var params_json = std.ArrayList(u8).init(self.allocator);
-        defer params_json.deinit();
-        try std.json.stringify(.{.unused_param1 = unused_param1}, .{}, params_json.writer());
-        const params_str = try params_json.toOwnedSlice();
-        defer self.allocator.free(params_str);
+        var params_str = std.ArrayList(u8).init(self.allocator);
+        defer params_str.deinit();
+        try zborStringify(.{.unused_param1 = unused_param1}, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 0,
-            .params = params_str,
+            .params = params_str.items,
         };
         return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 

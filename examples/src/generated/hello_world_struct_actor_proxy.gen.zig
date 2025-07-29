@@ -2,6 +2,9 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
+const zborParse = backstage.zborParse;
+const zborStringify = backstage.zborStringify;
+const zborDataItem = backstage.zborDataItem;
 const HelloWorldStructActor = @import("../hello_world_struct.zig").HelloWorldStructActor;
 const HelloWorldStruct = @import("../hello_world_struct.zig").HelloWorldStruct;
 
@@ -28,23 +31,20 @@ pub const HelloWorldStructActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
-        const params = try std.json.parseFromSlice(struct {
+    inline fn methodWrapper0(self: *Self, params: []const u8) !void {
+        const result = try zborParse(struct {
             s: HelloWorldStruct,
-        }, std.heap.page_allocator, params_json, .{});
-        defer params.deinit();
-        return self.underlying.logHelloWorld(params.value.s);
+        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.logHelloWorld(result.s);
     }
 
     pub inline fn logHelloWorld(self: *Self, s: HelloWorldStruct) !void {
-        var params_json = std.ArrayList(u8).init(self.allocator);
-        defer params_json.deinit();
-        try std.json.stringify(.{.s = s}, .{}, params_json.writer());
-        const params_str = try params_json.toOwnedSlice();
-        defer self.allocator.free(params_str);
+        var params_str = std.ArrayList(u8).init(self.allocator);
+        defer params_str.deinit();
+        try zborStringify(.{.s = s}, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 0,
-            .params = params_str,
+            .params = params_str.items,
         };
         return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 

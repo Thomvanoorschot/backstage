@@ -2,6 +2,9 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
+const zborParse = backstage.zborParse;
+const zborStringify = backstage.zborStringify;
+const zborDataItem = backstage.zborDataItem;
 const DiscaredVariableActor = @import("../discared_variable.zig").DiscaredVariableActor;
 
 pub const DiscaredVariableActorProxy = struct {
@@ -27,25 +30,22 @@ pub const DiscaredVariableActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
-        const params = try std.json.parseFromSlice(struct {
+    inline fn methodWrapper0(self: *Self, params: []const u8) !void {
+        const result = try zborParse(struct {
             unused_param1: []const u8,
             unused_param2: u64,
             used_param: u64,
-        }, std.heap.page_allocator, params_json, .{});
-        defer params.deinit();
-        return self.underlying.handleDiscaredVariable(params.value.unused_param1, params.value.unused_param2, params.value.used_param);
+        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.handleDiscaredVariable(result.unused_param1, result.unused_param2, result.used_param);
     }
 
     pub inline fn handleDiscaredVariable(self: *Self, unused_param1: []const u8, unused_param2: u64, used_param: u64) !void {
-        var params_json = std.ArrayList(u8).init(self.allocator);
-        defer params_json.deinit();
-        try std.json.stringify(.{.unused_param1 = unused_param1, .unused_param2 = unused_param2, .used_param = used_param}, .{}, params_json.writer());
-        const params_str = try params_json.toOwnedSlice();
-        defer self.allocator.free(params_str);
+        var params_str = std.ArrayList(u8).init(self.allocator);
+        defer params_str.deinit();
+        try zborStringify(.{.unused_param1 = unused_param1, .unused_param2 = unused_param2, .used_param = used_param}, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 0,
-            .params = params_str,
+            .params = params_str.items,
         };
         return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 

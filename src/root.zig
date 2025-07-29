@@ -6,3 +6,8 @@ pub const Actor = @import("actor.zig");
 pub const Envelope = @import("envelope.zig").Envelope;
 pub const Registry = @import("registry.zig").Registry;
 pub const MethodCall = @import("envelope.zig").MethodCall;
+
+const zbor = @import("zbor");
+pub const zborParse = zbor.parse;
+pub const zborStringify = zbor.stringify;
+pub const zborDataItem = zbor.DataItem;

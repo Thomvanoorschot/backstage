@@ -2,6 +2,9 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
+const zborParse = backstage.zborParse;
+const zborStringify = backstage.zborStringify;
+const zborDataItem = backstage.zborDataItem;
 const PoisonPillActor = @import("../poison_pill.zig").PoisonPillActor;
 
 pub const PoisonPillActorProxy = struct {
@@ -27,16 +30,15 @@ pub const PoisonPillActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
-        _ = params_json;
+    inline fn methodWrapper0(self: *Self, params: []const u8) !void {
+        _ = params;
         return self.underlying.swallowPoisonPill();
     }
 
     pub inline fn swallowPoisonPill(self: *Self) !void {
-        const params_str = "";
         const method_call = MethodCall{
             .method_id = 0,
-            .params = params_str,
+            .params = "",
         };
         return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 

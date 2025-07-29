@@ -2,6 +2,9 @@ const std = @import("std");
 const backstage = @import("backstage");
 const Context = backstage.Context;
 const MethodCall = backstage.MethodCall;
+const zborParse = backstage.zborParse;
+const zborStringify = backstage.zborStringify;
+const zborDataItem = backstage.zborDataItem;
 const MultipleMethodsActor = @import("../multiple_methods.zig").MultipleMethodsActor;
 const AddAmountWithMultiplier = @import("../multiple_methods.zig").AddAmountWithMultiplier;
 
@@ -28,43 +31,37 @@ pub const MultipleMethodsActorProxy = struct {
         try self.underlying.deinit();
         self.allocator.destroy(self);
     }
-    inline fn methodWrapper0(self: *Self, params_json: []const u8) !void {
-        const params = try std.json.parseFromSlice(struct {
+    inline fn methodWrapper0(self: *Self, params: []const u8) !void {
+        const result = try zborParse(struct {
             amount: u64,
-        }, std.heap.page_allocator, params_json, .{});
-        defer params.deinit();
-        return self.underlying.addAmount(params.value.amount);
+        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.addAmount(result.amount);
     }
 
-    inline fn methodWrapper1(self: *Self, params_json: []const u8) !void {
-        const params = try std.json.parseFromSlice(struct {
+    inline fn methodWrapper1(self: *Self, params: []const u8) !void {
+        const result = try zborParse(struct {
             params: AddAmountWithMultiplier,
-        }, std.heap.page_allocator, params_json, .{});
-        defer params.deinit();
-        return self.underlying.addAmountWithMultiplier(params.value.params);
+        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.addAmountWithMultiplier(result.params);
     }
 
     pub inline fn addAmount(self: *Self, amount: u64) !void {
-        var params_json = std.ArrayList(u8).init(self.allocator);
-        defer params_json.deinit();
-        try std.json.stringify(.{.amount = amount}, .{}, params_json.writer());
-        const params_str = try params_json.toOwnedSlice();
-        defer self.allocator.free(params_str);
+        var params_str = std.ArrayList(u8).init(self.allocator);
+        defer params_str.deinit();
+        try zborStringify(.{.amount = amount}, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 0,
-            .params = params_str,
+            .params = params_str.items,
         };
         return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 
     pub inline fn addAmountWithMultiplier(self: *Self, params: AddAmountWithMultiplier) !void {
-        var params_json = std.ArrayList(u8).init(self.allocator);
-        defer params_json.deinit();
-        try std.json.stringify(.{.params = params}, .{}, params_json.writer());
-        const params_str = try params_json.toOwnedSlice();
-        defer self.allocator.free(params_str);
+        var params_str = std.ArrayList(u8).init(self.allocator);
+        defer params_str.deinit();
+        try zborStringify(.{.params = params}, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 1,
-            .params = params_str,
+            .params = params_str.items,
         };
         return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
 

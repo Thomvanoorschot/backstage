@@ -608,6 +608,9 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
         \\const backstage = @import("backstage");
         \\const Context = backstage.Context;
         \\const MethodCall = backstage.MethodCall;
+        \\const zborParse = backstage.zborParse;
+        \\const zborStringify = backstage.zborStringify;
+        \\const zborDataItem = backstage.zborDataItem;
         \\const {s} = @import("{s}").{s};
         \\
     , .{ struct_name, relative_import, struct_name });
@@ -659,15 +662,13 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
 }
 
 fn generateMethodTable(allocator: std.mem.Allocator, writer: anytype, methods: []const MethodInfo, struct_name: []const u8, file_content: []const u8, types_to_import: *std.StringHashMap(void)) !void {
-    // Generate inline method wrappers (no function pointer table needed anymore)
     for (methods, 0..) |method, i| {
         try generateMethodWrapper(allocator, writer, method, i, struct_name, file_content, types_to_import);
     }
 }
 
 fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: MethodInfo, index: usize, struct_name: []const u8, file_content: []const u8, types_to_import: *std.StringHashMap(void)) !void {
-    // Add inline for performance - eliminates function call overhead
-    try writer.print("    inline fn methodWrapper{d}(self: *Self, params_json: []const u8) !void {{\n", .{index});
+    try writer.print("    inline fn methodWrapper{d}(self: *Self, params: []const u8) !void {{\n", .{index});
 
     const param_names = try extractParamNames(allocator, method.params);
     defer {
@@ -680,7 +681,7 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
     }
 
     if (param_names.len > 0) {
-        try writer.writeAll("        const params = try std.json.parseFromSlice(struct {\n");
+        try writer.writeAll("        const result = try zborParse(struct {\n");
 
         var param_split = std.mem.splitAny(u8, method.params, ",");
         var unused_count: u32 = 1;
@@ -713,17 +714,16 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
             }
         }
 
-        try writer.writeAll("        }, std.heap.page_allocator, params_json, .{});\n");
-        try writer.writeAll("        defer params.deinit();\n");
+        try writer.writeAll("        }, try zborDataItem.new(params), .{ .allocator = self.allocator });\n");
 
         try writer.print("        return self.underlying.{s}(", .{method.name});
         for (param_names, 0..) |name, i| {
             if (i > 0) try writer.writeAll(", ");
-            try writer.print("params.value.{s}", .{name});
+            try writer.print("result.{s}", .{name});
         }
         try writer.writeAll(");\n");
     } else {
-        try writer.writeAll("        _ = params_json;\n");
+        try writer.writeAll("        _ = params;\n");
         try writer.print("        return self.underlying.{s}();\n", .{method.name});
     }
 
@@ -741,7 +741,6 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
         allocator.free(param_names);
     }
 
-    // Add inline for performance - eliminates function call overhead
     try writer.print("    pub inline fn {s}(self: *Self", .{method_info.name});
 
     if (method_info.params.len > 0) {
@@ -781,36 +780,38 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
 
     try writer.writeAll(") !void {\n");
 
-    if (param_names.len == 0) {
-        try writer.writeAll("        const params_str = \"\";\n");
-    } else {
-        try writer.writeAll("        var params_json = std.ArrayList(u8).init(self.allocator);\n");
-        try writer.writeAll("        defer params_json.deinit();\n");
-        try writer.writeAll("        try std.json.stringify(.{");
+    if (param_names.len != 0) {
+        try writer.writeAll("        var params_str = std.ArrayList(u8).init(self.allocator);\n");
+        try writer.writeAll("        defer params_str.deinit();\n");
+        try writer.writeAll("        try zborStringify(.{");
 
         for (param_names, 0..) |name, i| {
             if (i > 0) try writer.writeAll(", ");
             try writer.print(".{s} = {s}", .{ name, name });
         }
 
-        try writer.writeAll("}, .{}, params_json.writer());\n");
-        try writer.writeAll("        const params_str = try params_json.toOwnedSlice();\n");
-        try writer.writeAll("        defer self.allocator.free(params_str);\n");
+        try writer.writeAll("}, .{}, params_str.writer());\n");
+        try writer.print(
+            \\        const method_call = MethodCall{{
+            \\            .method_id = {d},
+            \\            .params = params_str.items,
+            \\        }};
+            \\        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
+        , .{method_index});
+    } else {
+        try writer.print(
+            \\        const method_call = MethodCall{{
+            \\            .method_id = {d},
+            \\            .params = "",
+            \\        }};
+            \\        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
+        , .{method_index});
     }
-
-    try writer.print(
-        \\        const method_call = MethodCall{{
-        \\            .method_id = {d},
-        \\            .params = params_str,
-        \\        }};
-        \\        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
-    , .{method_index});
 
     try writer.writeAll("    }\n\n");
 }
 
 fn generateDispatchFunction(writer: anytype, method_count: usize) !void {
-    // Use comptime dispatch instead of function pointer table for better performance
     try writer.print(
         \\    pub inline fn dispatchMethod(self: *Self, method_call: MethodCall) !void {{
         \\        return switch (method_call.method_id) {{
