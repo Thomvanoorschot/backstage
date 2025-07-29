@@ -32,16 +32,14 @@ pub const HelloWorldStructActorProxy = struct {
         self.allocator.destroy(self);
     }
     inline fn methodWrapper0(self: *Self, params: []const u8) !void {
-        const result = try zborParse(struct {
-            s: HelloWorldStruct,
-        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
-        return self.underlying.logHelloWorld(result.s);
+        const result = try zborParse(HelloWorldStruct, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.logHelloWorld(result);
     }
 
     pub inline fn logHelloWorld(self: *Self, s: HelloWorldStruct) !void {
         var params_str = std.ArrayList(u8).init(self.allocator);
         defer params_str.deinit();
-        try zborStringify(.{.s = s}, .{}, params_str.writer());
+        try zborStringify(s, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 0,
             .params = params_str.items,

@@ -681,47 +681,72 @@ fn generateMethodWrapper(allocator: std.mem.Allocator, writer: anytype, method: 
     }
 
     if (param_names.len > 0) {
-        try writer.writeAll("        const result = try zborParse(struct {\n");
+        if (param_names.len == 1) {
+            var param_split = std.mem.splitAny(u8, method.params, ",");
+            var param_index: u32 = 0;
 
-        var param_split = std.mem.splitAny(u8, method.params, ",");
-        var unused_count: u32 = 1;
-        var param_index: u32 = 0;
+            while (param_split.next()) |param| {
+                const trimmed = std.mem.trim(u8, param, " \t");
+                if (trimmed.len == 0) continue;
 
-        while (param_split.next()) |param| {
-            const trimmed = std.mem.trim(u8, param, " \t");
-            if (trimmed.len == 0) continue;
+                if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
+                    if (param_index == 0) {
+                        param_index += 1;
+                        continue;
+                    }
 
-            if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
-                if (param_index == 0) {
-                    param_index += 1;
-                    continue;
+                    const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
+                    const resolved_type = try resolveTypeForProxy(allocator, param_type, file_content, struct_name, types_to_import);
+                    defer allocator.free(resolved_type);
+
+                    try writer.print("        const result = try zborParse({s}, try zborDataItem.new(params), .{{ .allocator = self.allocator }});\n", .{resolved_type});
+                    try writer.print("        return self.underlying.{s}(result);\n", .{method.name});
+                    break;
                 }
-
-                const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
-                const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
-                const resolved_type = try resolveTypeForProxy(allocator, param_type, file_content, struct_name, types_to_import);
-                defer allocator.free(resolved_type);
-
-                const display_param_name = if (std.mem.eql(u8, param_name, "_")) blk: {
-                    const name = try std.fmt.allocPrint(allocator, "unused_param{d}", .{unused_count});
-                    unused_count += 1;
-                    break :blk name;
-                } else param_name;
-
-                defer if (std.mem.startsWith(u8, display_param_name, "unused_param")) allocator.free(display_param_name);
-                try writer.print("            {s}: {s},\n", .{ display_param_name, resolved_type });
-                param_index += 1;
             }
-        }
+        } else {
+            try writer.writeAll("        const result = try zborParse(struct {\n");
 
-        try writer.writeAll("        }, try zborDataItem.new(params), .{ .allocator = self.allocator });\n");
+            var param_split = std.mem.splitAny(u8, method.params, ",");
+            var unused_count: u32 = 1;
+            var param_index: u32 = 0;
 
-        try writer.print("        return self.underlying.{s}(", .{method.name});
-        for (param_names, 0..) |name, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.print("result.{s}", .{name});
+            while (param_split.next()) |param| {
+                const trimmed = std.mem.trim(u8, param, " \t");
+                if (trimmed.len == 0) continue;
+
+                if (std.mem.indexOf(u8, trimmed, ":")) |colon_pos| {
+                    if (param_index == 0) {
+                        param_index += 1;
+                        continue;
+                    }
+
+                    const param_name = std.mem.trim(u8, trimmed[0..colon_pos], " \t");
+                    const param_type = std.mem.trim(u8, trimmed[colon_pos + 1 ..], " \t");
+                    const resolved_type = try resolveTypeForProxy(allocator, param_type, file_content, struct_name, types_to_import);
+                    defer allocator.free(resolved_type);
+
+                    const display_param_name = if (std.mem.eql(u8, param_name, "_")) blk: {
+                        const name = try std.fmt.allocPrint(allocator, "unused_param{d}", .{unused_count});
+                        unused_count += 1;
+                        break :blk name;
+                    } else param_name;
+
+                    defer if (std.mem.startsWith(u8, display_param_name, "unused_param")) allocator.free(display_param_name);
+                    try writer.print("            {s}: {s},\n", .{ display_param_name, resolved_type });
+                    param_index += 1;
+                }
+            }
+
+            try writer.writeAll("        }, try zborDataItem.new(params), .{ .allocator = self.allocator });\n");
+
+            try writer.print("        return self.underlying.{s}(", .{method.name});
+            for (param_names, 0..) |name, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print("result.{s}", .{name});
+            }
+            try writer.writeAll(");\n");
         }
-        try writer.writeAll(");\n");
     } else {
         try writer.writeAll("        _ = params;\n");
         try writer.print("        return self.underlying.{s}();\n", .{method.name});
@@ -781,16 +806,24 @@ fn generateProxyMethod(allocator: std.mem.Allocator, writer: anytype, method_inf
     try writer.writeAll(") !void {\n");
 
     if (param_names.len != 0) {
-        try writer.writeAll("        var params_str = std.ArrayList(u8).init(self.allocator);\n");
-        try writer.writeAll("        defer params_str.deinit();\n");
-        try writer.writeAll("        try zborStringify(.{");
+        if (param_names.len == 0) {
+            try writer.writeAll("        const params_str = \"\";\n");
+        } else if (param_names.len == 1) {
+            try writer.writeAll("        var params_str = std.ArrayList(u8).init(self.allocator);\n");
+            try writer.writeAll("        defer params_str.deinit();\n");
+            try writer.print("        try zborStringify({s}, .{{}}, params_str.writer());\n", .{param_names[0]});
+        } else {
+            try writer.writeAll("        var params_str = std.ArrayList(u8).init(self.allocator);\n");
+            try writer.writeAll("        defer params_str.deinit();\n");
+            try writer.writeAll("        try zborStringify(.{");
 
-        for (param_names, 0..) |name, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.print(".{s} = {s}", .{ name, name });
+            for (param_names, 0..) |name, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print(".{s} = {s}", .{ name, name });
+            }
+
+            try writer.writeAll("}, .{}, params_str.writer());\n");
         }
-
-        try writer.writeAll("}, .{}, params_str.writer());\n");
         try writer.print(
             \\        const method_call = MethodCall{{
             \\            .method_id = {d},

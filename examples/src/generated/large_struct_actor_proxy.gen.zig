@@ -32,16 +32,14 @@ pub const LargeStructActorProxy = struct {
         self.allocator.destroy(self);
     }
     inline fn methodWrapper0(self: *Self, params: []const u8) !void {
-        const result = try zborParse(struct {
-            ls: LargeStruct,
-        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
-        return self.underlying.handleLargeStruct(result.ls);
+        const result = try zborParse(LargeStruct, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.handleLargeStruct(result);
     }
 
     pub inline fn handleLargeStruct(self: *Self, ls: LargeStruct) !void {
         var params_str = std.ArrayList(u8).init(self.allocator);
         defer params_str.deinit();
-        try zborStringify(.{.ls = ls}, .{}, params_str.writer());
+        try zborStringify(ls, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 0,
             .params = params_str.items,

@@ -33,7 +33,7 @@ pub const Stream = struct {
                 var str = std.ArrayList(u8).init(stream.allocator);
                 defer str.deinit();
                 // TODO We dont know if the first key is going to be message or not
-                try stringify(.{ .message = payload }, .{}, str.writer());
+                try stringify(payload, .{}, str.writer());
 
                 for (stream.subscribers.items) |subscription| {
                     try engine_internal.enqueueMessage(

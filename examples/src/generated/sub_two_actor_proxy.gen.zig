@@ -36,10 +36,8 @@ pub const SubTwoActorProxy = struct {
     }
 
     inline fn methodWrapper1(self: *Self, params: []const u8) !void {
-        const result = try zborParse(struct {
-            message: []const u8,
-        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
-        return self.underlying.handleMessage(result.message);
+        const result = try zborParse([]const u8, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.handleMessage(result);
     }
 
     pub inline fn subscribe(self: *Self) !void {
@@ -52,7 +50,7 @@ pub const SubTwoActorProxy = struct {
     pub inline fn handleMessage(self: *Self, message: []const u8) !void {
         var params_str = std.ArrayList(u8).init(self.allocator);
         defer params_str.deinit();
-        try zborStringify(.{.message = message}, .{}, params_str.writer());
+        try zborStringify(message, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 1,
             .params = params_str.items,

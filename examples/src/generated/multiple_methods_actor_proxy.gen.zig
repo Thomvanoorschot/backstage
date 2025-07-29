@@ -32,23 +32,19 @@ pub const MultipleMethodsActorProxy = struct {
         self.allocator.destroy(self);
     }
     inline fn methodWrapper0(self: *Self, params: []const u8) !void {
-        const result = try zborParse(struct {
-            amount: u64,
-        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
-        return self.underlying.addAmount(result.amount);
+        const result = try zborParse(u64, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.addAmount(result);
     }
 
     inline fn methodWrapper1(self: *Self, params: []const u8) !void {
-        const result = try zborParse(struct {
-            params: AddAmountWithMultiplier,
-        }, try zborDataItem.new(params), .{ .allocator = self.allocator });
-        return self.underlying.addAmountWithMultiplier(result.params);
+        const result = try zborParse(AddAmountWithMultiplier, try zborDataItem.new(params), .{ .allocator = self.allocator });
+        return self.underlying.addAmountWithMultiplier(result);
     }
 
     pub inline fn addAmount(self: *Self, amount: u64) !void {
         var params_str = std.ArrayList(u8).init(self.allocator);
         defer params_str.deinit();
-        try zborStringify(.{.amount = amount}, .{}, params_str.writer());
+        try zborStringify(amount, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 0,
             .params = params_str.items,
@@ -58,7 +54,7 @@ pub const MultipleMethodsActorProxy = struct {
     pub inline fn addAmountWithMultiplier(self: *Self, params: AddAmountWithMultiplier) !void {
         var params_str = std.ArrayList(u8).init(self.allocator);
         defer params_str.deinit();
-        try zborStringify(.{.params = params}, .{}, params_str.writer());
+        try zborStringify(params, .{}, params_str.writer());
         const method_call = MethodCall{
             .method_id = 1,
             .params = params_str.items,
