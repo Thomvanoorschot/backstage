@@ -16,6 +16,10 @@ pub const HelloWorldStructActorProxy = struct {
     
     const Self = @This();
 
+    pub const Method = enum(u32) {
+        logHelloWorld = 0,
+    };
+
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
         const self = try allocator.create(Self);
         const underlying = try HelloWorldStructActor.init(ctx, allocator);

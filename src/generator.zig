@@ -453,8 +453,7 @@ fn extractFunctionParameters(allocator: std.mem.Allocator, ast: *std.zig.Ast, fn
                 try type_str.appendSlice(token_slice_type);
 
                 const current_tag = token_tags[i];
-                if (current_tag == .l_bracket or current_tag == .r_bracket) {
-                } else if (i + 1 < type_end) {
+                if (current_tag == .l_bracket or current_tag == .r_bracket) {} else if (i + 1 < type_end) {
                     const next_tag = token_tags[i + 1];
                     if (next_tag != .l_bracket and next_tag != .r_bracket and
                         current_tag != .l_bracket and current_tag != .r_bracket)
@@ -613,6 +612,18 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
     try writer.writeAll(
         \\    
         \\    const Self = @This();
+        \\
+        \\    pub const Method = enum(u32) {
+        \\
+    );
+
+    // Generate method enum values
+    for (methods, 0..) |method, i| {
+        try writer.print("        {s} = {d},\n", .{ method.name, i });
+    }
+
+    try writer.writeAll(
+        \\    };
         \\
         \\    pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
         \\        const self = try allocator.create(Self);
@@ -905,8 +916,7 @@ fn cleanupAstTypeString(allocator: std.mem.Allocator, type_str: []const u8) ![]u
         {
             try result.append('.');
             i += 3;
-        }
-        else if (type_str[i] == ' ') {
+        } else if (type_str[i] == ' ') {
             if (result.items.len == 0 or result.items[result.items.len - 1] != ' ') {
                 try result.append(' ');
             }

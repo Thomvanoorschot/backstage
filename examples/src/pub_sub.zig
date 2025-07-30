@@ -5,6 +5,7 @@ const testing = std.testing;
 const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
+const newSubscriber = backstage.newSubscriber;
 const PubActorProxy = @import("generated/pub_actor_proxy.gen.zig").PubActorProxy;
 const SubOneActorProxy = @import("generated/sub_one_actor_proxy.gen.zig").SubOneActorProxy;
 const SubTwoActorProxy = @import("generated/sub_two_actor_proxy.gen.zig").SubTwoActorProxy;
@@ -51,11 +52,9 @@ pub const SubOneActor = struct {
 
     pub fn subscribe(self: *Self) !void {
         const stream = try self.ctx.getStream([]const u8, "test");
-        //TODO The way we have to set the subscriber sucks, but it's a temporary solution
-        try stream.subscribe(.{
-            .actor_id = "sub_one_actor",
-            .method_id = 1,
-        });
+        try stream.subscribe(
+            newSubscriber("sub_one_actor", SubOneActorProxy.Method.handleMessage),
+        );
     }
 
     pub fn handleMessage(self: *Self, message: []const u8) !void {
@@ -84,11 +83,9 @@ pub const SubTwoActor = struct {
 
     pub fn subscribe(self: *Self) !void {
         const stream = try self.ctx.getStream([]const u8, "test");
-        //TODO The way we have to set the subscriber sucks, but it's a temporary solution
-        try stream.subscribe(.{
-            .actor_id = "sub_two_actor",
-            .method_id = 1,
-        });
+        try stream.subscribe(
+            newSubscriber("sub_two_actor", SubTwoActorProxy.Method.handleMessage),
+        );
     }
 
     pub fn handleMessage(self: *Self, message: []const u8) !void {

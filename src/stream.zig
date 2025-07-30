@@ -32,7 +32,6 @@ pub const Stream = struct {
                 const stream = unsafeAnyOpaqueCast(Stream, self_);
                 var str = std.ArrayList(u8).init(stream.allocator);
                 defer str.deinit();
-                // TODO We dont know if the first key is going to be message or not
                 try stringify(payload, .{}, str.writer());
 
                 for (stream.subscribers.items) |subscription| {
@@ -89,6 +88,28 @@ const Subscriber = struct {
     actor_id: []const u8,
     method_id: u32,
 };
+pub fn newSubscriber(actor_id: []const u8, comptime method: anytype) Subscriber {
+    const method_id = comptime switch (@typeInfo(@TypeOf(method))) {
+        .@"enum" => |enum_info| blk: {
+            if (enum_info.tag_type != u32) {
+                @compileError("Enum must have u32 underlying type, got " ++ @typeName(enum_info.tag_type));
+            }
+            break :blk @intFromEnum(method);
+        },
+        .@"int" => blk: {
+            if (@TypeOf(method) != u32) {
+                @compileError("Integer must be u32, got " ++ @typeName(@TypeOf(method)));
+            }
+            break :blk method;
+        },
+        else => @compileError("Expected enum(u32) or u32, got " ++ @typeName(@TypeOf(method))),
+    };
+
+    return Subscriber{
+        .actor_id = actor_id,
+        .method_id = method_id,
+    };
+}
 
 pub fn StreamHandle(comptime PayloadType: type) type {
     return struct {

@@ -15,6 +15,11 @@ pub const SubOneActorProxy = struct {
     
     const Self = @This();
 
+    pub const Method = enum(u32) {
+        subscribe = 0,
+        handleMessage = 1,
+    };
+
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
         const self = try allocator.create(Self);
         const underlying = try SubOneActor.init(ctx, allocator);
