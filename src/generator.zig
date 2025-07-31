@@ -1,13 +1,22 @@
+// const build_options = @import("build_options");
 const std = @import("std");
-const build_options = @import("build_options");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const scan_dirs = build_options.scan_dirs;
-    const output_dir = build_options.output_dir;
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len < 3) {
+        std.debug.print("Usage: {s} <output_dir> <scan_dir1> [scan_dir2] [...]\n", .{args[0]});
+        std.debug.print("Example: {s} src/generated src src/actors\n", .{args[0]});
+        return;
+    }
+
+    const output_dir = args[1];
+    const scan_dirs = args[2..];
 
     const actor_files = try discoverMarkedActors(allocator, scan_dirs);
     defer {

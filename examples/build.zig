@@ -9,6 +9,7 @@ pub fn build(b: *Build) void {
     const backstage_dep = b.dependency("backstage", .{
         .target = target,
         .optimize = optimize,
+        .generate_proxies = true,
     });
 
     const example_names = .{
@@ -24,6 +25,20 @@ pub fn build(b: *Build) void {
         "pub_sub",
     };
 
+    const generator = backstage_dep.artifact("generator");
+    b.installArtifact(generator);
+    const run_generator = b.addRunArtifact(generator);
+    // Output directory
+    run_generator.addArg("src/generated");
+    // Scan directories
+    run_generator.addArg("src");
+    // You can add more scan directories here
+    //run_generator.addArg("other_directory");
+
+    const gen_proxies = b.step("gen-proxies", "Generate actor proxies");
+    gen_proxies.dependOn(&run_generator.step);
+    b.getInstallStep().dependOn(gen_proxies);
+
     const test_step = b.step("test", "Run all tests");
 
     inline for (example_names) |example_name| {
@@ -34,7 +49,6 @@ pub fn build(b: *Build) void {
             .name = example_name,
         });
         example.root_module.addImport("backstage", backstage_dep.module("backstage"));
-        b.installArtifact(example);
 
         const run = b.addRunArtifact(example);
         const test_install = b.addInstallArtifact(
