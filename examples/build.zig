@@ -23,6 +23,7 @@ pub fn build(b: *Build) void {
         "multiple_messages",
         "poison_pill",
         "pub_sub",
+        "array_list_actor",
     };
 
     const generator = backstage_dep.artifact("generator");
