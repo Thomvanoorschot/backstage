@@ -11,7 +11,6 @@ const Allocator = std.mem.Allocator;
 const Registry = reg.Registry;
 const ActorInterface = act.ActorInterface;
 const Engine = eng.Engine;
-const ActorOptions = eng.ActorOptions;
 const unsafeAnyOpaqueCast = type_utils.unsafeAnyOpaqueCast;
 const StreamHandle = strm.StreamHandle;
 
@@ -70,26 +69,26 @@ pub const Context = struct {
         // self.subscribed_to_actors.deinit();
 
         // // Cleanup child actors
-        var child_it = self.child_actors.valueIterator();
-        while (child_it.next()) |actor| {
-            engine_internal.deinitActorByReference(self.engine, actor.*);
-        }
-        self.child_actors.deinit();
+        // var child_it = self.child_actors.valueIterator();
+        // while (child_it.next()) |actor| {
+        //     engine_internal.deinitActorByReference(self.engine, actor.*);
+        // }
+        // self.child_actors.deinit();
 
-        // // Detach from parent
-        if (self.parent_actor) |parent| {
-            const could_detach = parent.ctx.detachChildActor(self.actor);
-            if (!could_detach) {
-                std.log.warn("Failed to detach child actor {s} from parent {s}", .{ self.actor_id, parent.ctx.actor_id });
-            }
-        }
+        // // // Detach from parent
+        // if (self.parent_actor) |parent| {
+        //     const could_detach = parent.ctx.detachChildActor(self.actor);
+        //     if (!could_detach) {
+        //         std.log.warn("Failed to detach child actor {s} from parent {s}", .{ self.actor_id, parent.ctx.actor_id });
+        //     }
+        // }
     }
 
     pub fn poisonPill(self: *Self) !void {
         try self.engine.poisonPill(self.actor_id);
     }
 
-    pub fn dispatchMethodCall(self: *const Self, target_id: []const u8, message: anytype) !void {
+    pub fn enqueueMethodCall(self: *const Self, target_id: []const u8, message: anytype) !void {
         try engine_internal.enqueueMessage(
             self.engine,
             self.actor_id,
@@ -205,21 +204,19 @@ pub const Context = struct {
     pub fn getActor(self: *const Self, comptime ActorType: type, id: []const u8) !*ActorType {
         return try self.engine.getActor(ActorType, id);
     }
-    pub fn spawnActor(self: *Self, comptime ActorType: type, options: ActorOptions) !*ActorType {
-        return try self.engine.spawnActor(ActorType, options);
-    }
-    pub fn spawnChildActor(self: *Self, comptime ActorType: type, options: ActorOptions) !*ActorType {
-        const actor_impl = try self.engine.spawnActor(ActorType, options);
-        actor_impl.ctx.parent_actor = self.actor;
-        try self.child_actors.put(options.id, actor_impl.ctx.actor);
-        return actor_impl;
-    }
-    pub fn detachChildActor(self: *Self, actor: *ActorInterface) bool {
-        return self.child_actors.remove(actor.ctx.actor_id);
-    }
-    pub fn detachChildActorByID(self: *Self, id: []const u8) bool {
-        return self.child_actors.remove(id);
-    }
+
+    // pub fn spawnChildActor(self: *Self, comptime ActorType: type, options: ActorOptions) !*ActorType {
+    //     const actor_impl = try self.engine.spawnActor(ActorType, options);
+    //     actor_impl.ctx.parent_actor = self.actor;
+    //     try self.child_actors.put(options.id, actor_impl.ctx.actor);
+    //     return actor_impl;
+    // }
+    // pub fn detachChildActor(self: *Self, actor: *ActorInterface) bool {
+    //     return self.child_actors.remove(actor.ctx.actor_id);
+    // }
+    // pub fn detachChildActorByID(self: *Self, id: []const u8) bool {
+    //     return self.child_actors.remove(id);
+    // }
 
     fn deinitTimers(self: *Self) void {
         for (self.timer_completions.items) |completion| {

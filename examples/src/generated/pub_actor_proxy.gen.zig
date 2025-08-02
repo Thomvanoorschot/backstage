@@ -47,9 +47,9 @@ pub const PubActorProxy = struct {
             .method_id = 0,
             .params = params_str.items,
         };
-        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);    }
+        return self.ctx.enqueueMethodCall(self.ctx.actor_id, method_call);    }
 
-    pub inline fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
+    pub inline fn enqueueMethodCall(self: *Self, method_call: MethodCall) !void {
         return switch (method_call.method_id) {            0 => methodWrapper0(self, method_call.params),
             else => error.UnknownMethod,
         };

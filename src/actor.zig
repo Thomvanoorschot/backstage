@@ -130,7 +130,7 @@ pub const ActorInterface = struct {
                     };
                     defer method_call.deinit(self.allocator);
                     self.dispatchFnPtr(self.impl, method_call) catch |err| {
-                        std.log.err("Tried to dispatch method call but failed: {s}", .{@errorName(err)});
+                        std.log.err("{?s} tried to dispatch method call {d} to {s} but failed: {s}", .{ envelope.sender_id, method_call.method_id, self.ctx.actor_id, @errorName(err) });
                     };
                 },
                 .publish => {
@@ -243,7 +243,7 @@ fn makeTypeErasedDispatchFn(comptime ActorType: type) fn (*anyopaque, envlp.Meth
         fn wrapper(ptr: *anyopaque, method_call: envlp.MethodCall) anyerror!void {
             const self = @as(*ActorType, @ptrCast(@alignCast(ptr)));
 
-            try self.dispatchMethod(method_call);
+            try self.enqueueMethodCall(method_call);
         }
     }.wrapper;
 }

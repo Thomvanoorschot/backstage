@@ -737,7 +737,7 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
                 \\            .method_id = {d},
                 \\            .params = "",
                 \\        }};
-                \\        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
+                \\        return self.ctx.enqueueMethodCall(self.ctx.actor_id, method_call);
             , .{i});
         } else {
             try writer.writeAll("        var params_str = std.ArrayList(u8).init(self.allocator);\n");
@@ -759,14 +759,14 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
                 \\            .method_id = {d},
                 \\            .params = params_str.items,
                 \\        }};
-                \\        return self.ctx.dispatchMethodCall(self.ctx.actor_id, method_call);
+                \\        return self.ctx.enqueueMethodCall(self.ctx.actor_id, method_call);
             , .{i});
         }
         try writer.writeAll("    }\n\n");
     }
 
     try writer.writeAll(
-        \\    pub inline fn dispatchMethod(self: *Self, method_call: MethodCall) !void {
+        \\    pub inline fn enqueueMethodCall(self: *Self, method_call: MethodCall) !void {
         \\        return switch (method_call.method_id) {
     );
 
