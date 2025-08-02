@@ -5,16 +5,36 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const enable_inspector = b.option(bool, "enable_inspector", "Enable inspector window") orelse false;
+    const generate_proxies = b.option(bool, "generate_proxies", "Generate actor proxies") orelse false;
+
+    if (generate_proxies) {
+        const generator_exe = b.addExecutable(.{
+            .name = "generator",
+            .root_source_file = b.path("src/generator.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        const install_generator = b.addInstallArtifact(generator_exe, .{});
+        b.getInstallStep().dependOn(&install_generator.step);
+    }
+
+    const options = b.addOptions();
+    options.addOption(bool, "enable_inspector", enable_inspector);
 
     const backstage_mod = b.addModule("backstage", .{
         .root_source_file = b.path("src/root.zig"),
     });
-    const options = b.addOptions();
-    options.addOption(bool, "enable_inspector", enable_inspector);
     backstage_mod.addImport("build_options", options.createModule());
 
     const xev = b.dependency("libxev", .{ .target = target, .optimize = optimize });
     backstage_mod.addImport("xev", xev.module("xev"));
+
+    const zbor_dep = b.dependency("zbor", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    backstage_mod.addImport("zbor", zbor_dep.module("zbor"));
 
     const zignite_dep = b.lazyDependency("zignite", .{ .target = target, .optimize = optimize });
     if (zignite_dep) |zd| {

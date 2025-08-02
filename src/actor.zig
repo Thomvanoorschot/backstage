@@ -35,7 +35,7 @@ pub const ActorInterface = struct {
     arena_state: std.heap.ArenaAllocator,
     inspector: ?*Inspector,
     deinitFnPtr: *const fn (ptr: *anyopaque) anyerror!void,
-    receiveFnPtr: *const fn (ptr: *anyopaque, envelope: Envelope) anyerror!void,
+    dispatchFnPtr: *const fn (ptr: *anyopaque, method_call: envlp.MethodCall) anyerror!void,
     actor_type_name: []const u8,
 
     const Self = @This();
@@ -44,7 +44,7 @@ pub const ActorInterface = struct {
         allocator: Allocator,
         engine: *Engine,
         comptime ActorType: type,
-        options: ActorOptions,
+        id: []const u8,
         inspector: ?*Inspector,
     ) !*Self {
         const self = try allocator.create(Self);
@@ -53,9 +53,9 @@ pub const ActorInterface = struct {
             .state = .active,
             .arena_state = std.heap.ArenaAllocator.init(allocator),
             .deinitFnPtr = makeTypeErasedDeinitFn(ActorType),
-            .receiveFnPtr = makeTypeErasedReceiveFn(ActorType),
-            .inbox = try Inbox.init(self.allocator, options.capacity),
-            .ctx = try Context.init(self.arena_state.allocator(), engine, self, options.id),
+            .dispatchFnPtr = makeTypeErasedDispatchFn(ActorType),
+            .inbox = try Inbox.init(self.allocator, 1024),
+            .ctx = try Context.init(self.arena_state.allocator(), engine, self, id),
             .impl = try ActorType.init(self.ctx, self.arena_state.allocator()),
             .inspector = inspector,
             .actor_type_name = type_utils.getTypeName(ActorType),
@@ -123,20 +123,30 @@ pub const ActorInterface = struct {
             }
 
             switch (envelope.message_type) {
-                .send, .publish => {
-                    self.receiveFnPtr(self.impl, envelope) catch |err| {
-                        std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
+                .method_call => {
+                    const method_call = envlp.MethodCall.decode(self.allocator, envelope.message) catch |err| {
+                        std.log.err("Tried to decode method call but failed: {s}", .{@errorName(err)});
+                        return .rearm;
                     };
+                    defer method_call.deinit(self.allocator);
+                    self.dispatchFnPtr(self.impl, method_call) catch |err| {
+                        std.log.err("{?s} tried to dispatch method call {d} to {s} but failed: {s}", .{ envelope.sender_id, method_call.method_id, self.ctx.actor_id, @errorName(err) });
+                    };
+                },
+                .publish => {
+                    // self.receiveFnPtr(self.impl, envelope) catch |err| {
+                    //     std.log.err("Tried to receive message but failed: {s}", .{@errorName(err)});
+                    // };
                 },
                 .subscribe => {
-                    self.addSubscriber(envelope) catch |err| {
-                        std.log.err("Tried to put topic subscription but failed: {s}", .{@errorName(err)});
-                    };
+                    // self.addSubscriber(envelope) catch |err| {
+                    //     std.log.err("Tried to put topic subscription but failed: {s}", .{@errorName(err)});
+                    // };
                 },
                 .unsubscribe => {
-                    self.removeSubscriber(envelope) catch |err| {
-                        std.log.err("Tried to remove topic subscription but failed: {s}", .{@errorName(err)});
-                    };
+                    // self.removeSubscriber(envelope) catch |err| {
+                    //     std.log.err("Tried to remove topic subscription but failed: {s}", .{@errorName(err)});
+                    // };
                 },
                 .poison_pill => {
                     self.state = .closing;
@@ -149,38 +159,38 @@ pub const ActorInterface = struct {
         return .rearm;
     }
 
-    fn addSubscriber(self: *Self, envelope: Envelope) !void {
-        if (envelope.sender_id == null) {
-            return error.SenderIdIsRequired;
-        }
-        var subscribers = self.ctx.topic_subscriptions.getPtr(envelope.message);
-        if (subscribers == null) {
-            const owned_topic = try self.allocator.dupe(u8, envelope.message);
-            try self.ctx.topic_subscriptions.put(owned_topic, std.StringHashMap(void).init(self.allocator));
-            subscribers = self.ctx.topic_subscriptions.getPtr(owned_topic);
-        }
-        if (subscribers.?.get(envelope.sender_id.?) != null) {
-            return;
-        }
-        const owned_sender_id = try self.allocator.dupe(u8, envelope.sender_id.?);
-        try subscribers.?.put(owned_sender_id, {});
-    }
+    // fn addSubscriber(self: *Self, envelope: Envelope) !void {
+    //     if (envelope.sender_id == null) {
+    //         return error.SenderIdIsRequired;
+    //     }
+    //     var subscribers = self.ctx.topic_subscriptions.getPtr(envelope.message);
+    //     if (subscribers == null) {
+    //         const owned_topic = try self.ctx.allocator.dupe(u8, envelope.message);
+    //         try self.ctx.topic_subscriptions.put(owned_topic, std.StringHashMap(void).init(self.ctx.allocator));
+    //         subscribers = self.ctx.topic_subscriptions.getPtr(owned_topic);
+    //     }
+    //     if (subscribers.?.get(envelope.sender_id.?) != null) {
+    //         return;
+    //     }
+    //     const owned_sender_id = try self.ctx.allocator.dupe(u8, envelope.sender_id.?);
+    //     try subscribers.?.put(owned_sender_id, {});
+    // }
 
-    fn removeSubscriber(self: *Self, envelope: Envelope) !void {
-        var subscribers = self.ctx.topic_subscriptions.get(envelope.message);
-        if (subscribers == null) {
-            return error.TopicDoesNotExist;
-        }
-        if (subscribers.?.fetchRemove(envelope.sender_id.?)) |owned_sender_id| {
-            self.allocator.free(owned_sender_id.key);
-        }
-        if (subscribers.?.count() == 0) {
-            if (self.ctx.topic_subscriptions.fetchRemove(envelope.message)) |owned_topic| {
-                self.allocator.free(owned_topic.key);
-            }
-            subscribers.?.deinit();
-        }
-    }
+    // fn removeSubscriber(self: *Self, envelope: Envelope) !void {
+    //     var subscribers = self.ctx.topic_subscriptions.get(envelope.message);
+    //     if (subscribers == null) {
+    //         return error.TopicDoesNotExist;
+    //     }
+    //     if (subscribers.?.fetchRemove(envelope.sender_id.?)) |owned_sender_id| {
+    //         self.allocator.free(owned_sender_id.key);
+    //     }
+    //     if (subscribers.?.count() == 0) {
+    //         if (self.ctx.topic_subscriptions.fetchRemove(envelope.message)) |owned_topic| {
+    //             self.allocator.free(owned_topic.key);
+    //         }
+    //         subscribers.?.deinit();
+    //     }
+    // }
 };
 
 fn makeTypeErasedDeinitFn(comptime ActorType: type) fn (*anyopaque) anyerror!void {
@@ -228,11 +238,12 @@ fn hasDeinitMethod(comptime T: type) bool {
     return false;
 }
 
-fn makeTypeErasedReceiveFn(comptime ActorType: type) fn (*anyopaque, Envelope) anyerror!void {
+fn makeTypeErasedDispatchFn(comptime ActorType: type) fn (*anyopaque, envlp.MethodCall) anyerror!void {
     return struct {
-        fn wrapper(ptr: *anyopaque, envelope: Envelope) anyerror!void {
+        fn wrapper(ptr: *anyopaque, method_call: envlp.MethodCall) anyerror!void {
             const self = @as(*ActorType, @ptrCast(@alignCast(ptr)));
-            try self.receive(envelope);
+
+            try self.enqueueMethodCall(method_call);
         }
     }.wrapper;
 }

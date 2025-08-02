@@ -5,11 +5,12 @@ const testing = std.testing;
 const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
+const PoisonPillActorProxy = @import("generated/poison_pill_actor_proxy.gen.zig").PoisonPillActorProxy;
 
-const LazyActor = struct {
+// @generate-proxy
+pub const PoisonPillActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
-    hello_world_received: bool = false,
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
@@ -21,17 +22,14 @@ const LazyActor = struct {
         return self;
     }
 
-    pub fn receive(self: *Self, envelope: Envelope) !void {
-        if (std.mem.eql(u8, envelope.message, "Hello, world!")) {
-            self.hello_world_received = true;
-            std.log.info("{s}", .{envelope.message});
-        }
+    pub fn swallowPoisonPill(self: *Self) !void {
+        try self.ctx.poisonPill();
     }
 
     pub fn deinit(_: *Self) !void {}
 };
 
-test "Lazy actor" {
+test "Poison pill" {
     testing.log_level = .info;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -40,10 +38,9 @@ test "Lazy actor" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.spawnActor(LazyActor, .{
-        .id = "test_actor",
-    });
-    try engine.send("test_actor", "Hello, world!");
+    const test_actor = try engine.getActor(PoisonPillActorProxy, "test_actor");
+    try testing.expect(engine.registry.actorsIDMap.count() == 1);
+    try test_actor.swallowPoisonPill();
     try engine.loop.run(.once);
-    try testing.expect(test_actor.hello_world_received);
+    try testing.expect(engine.registry.actorsIDMap.count() == 0);
 }

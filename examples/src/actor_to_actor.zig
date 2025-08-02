@@ -5,8 +5,11 @@ const testing = std.testing;
 const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
+const ReceiverActorProxy = @import("generated/receiver_actor_proxy.gen.zig").ReceiverActorProxy;
+const SenderActorProxy = @import("generated/sender_actor_proxy.gen.zig").SenderActorProxy;
 
-const SenderActor = struct {
+// @generate-proxy
+pub const SenderActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
     const Self = @This();
@@ -20,14 +23,16 @@ const SenderActor = struct {
         return self;
     }
 
-    pub fn receive(self: *Self, envelope: Envelope) !void {
-        try self.ctx.send("receiver_actor", envelope.message);
+    pub fn sendMessage(self: *Self, message: []const u8) !void {
+        const receiver_actor = try self.ctx.getActor(ReceiverActorProxy, "receiver_actor");
+        try receiver_actor.receiveMessage(message);
     }
 
     pub fn deinit(_: *Self) !void {}
 };
 
-const ReceiverActor = struct {
+// @generate-proxy
+pub const ReceiverActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
     hello_world_received: bool = false,
@@ -42,16 +47,15 @@ const ReceiverActor = struct {
         return self;
     }
 
-    pub fn receive(self: *Self, envelope: Envelope) !void {
-        if (std.mem.eql(u8, envelope.message, "Hello, world!")) {
+    pub fn receiveMessage(self: *Self, message: []const u8) !void {
+        if (std.mem.eql(u8, message, "Hello, world!")) {
             self.hello_world_received = true;
-            std.log.info("{s}", .{envelope.message});
+            std.log.info("{s}", .{message});
         }
     }
 
     pub fn deinit(_: *Self) !void {}
 };
-
 
 test "Actor to actor" {
     testing.log_level = .info;
@@ -62,14 +66,10 @@ test "Actor to actor" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    _ = try engine.spawnActor(SenderActor, .{
-        .id = "sender_actor",
-    });
-    const receiver_actor = try engine.spawnActor(ReceiverActor, .{ // TODO: why is this not working?
-        .id = "receiver_actor",
-    });
-    try engine.send("sender_actor", "Hello, world!");
+    const sender_actor = try engine.getActor(SenderActorProxy, "sender_actor");
+    const receiver_actor = try engine.getActor(ReceiverActorProxy, "receiver_actor");
+    try sender_actor.sendMessage("Hello, world!");
     try engine.loop.run(.once);
-    // try engine.loop.run(.once);
-    try testing.expect(receiver_actor.hello_world_received);
+
+    try testing.expect(receiver_actor.underlying.hello_world_received);
 }

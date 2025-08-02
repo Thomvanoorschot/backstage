@@ -27,5 +27,9 @@
             .hash = "protobuf-2.0.0-0e82akObGwBZQtrB7Qb6CTWSrwYKRPJ0M4L0CuTJmJ9G",
             .lazy = true,
         },
+        .zbor = .{
+            .url = "https://github.com/r4gus/zbor/archive/refs/tags/0.18.0.tar.gz",
+            .hash = "zbor-0.18.0-kr-CoAljAwBNZ9qtzbsczvhValCeJO74j7fmVhzNLdK3",
+        },
     },
 }

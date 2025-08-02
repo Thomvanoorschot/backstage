@@ -5,13 +5,12 @@ const testing = std.testing;
 const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
-const HelloWorldStringActorProxy = @import("generated/hello_world_string_actor_proxy.gen.zig").HelloWorldStringActorProxy;
+const DiscaredVariableActorProxy = @import("generated/discared_variable_actor_proxy.gen.zig").DiscaredVariableActorProxy;
 
 // @generate-proxy
-pub const HelloWorldStringActor = struct {
+pub const DiscaredVariableActor = struct {
     ctx: *Context,
     allocator: std.mem.Allocator,
-    hello_world_received: bool = false,
     const Self = @This();
 
     pub fn init(ctx: *Context, allocator: std.mem.Allocator) !*Self {
@@ -23,17 +22,23 @@ pub const HelloWorldStringActor = struct {
         return self;
     }
 
-    pub fn logHelloWorld(self: *Self, message: []const u8) !void {
-        if (std.mem.eql(u8, message, "Hello, world!")) {
-            self.hello_world_received = true;
-            std.log.info("{s}", .{message});
-        }
+    pub fn handleDiscaredVariable(_: *Self, _: []const u8, _: u64, used_param: u64) !void {
+        std.log.info("A number with no meaning whatsoever: {}", .{used_param});
     }
 
     pub fn deinit(_: *Self) !void {}
 };
 
-test "Hello, World!" {
+// These will be used in another test
+pub const FirstExportedVariable = struct {
+    number: u64,
+};
+
+pub const SecondExportedVariable = struct {
+    number: u64,
+};
+
+test "Discared variable" {
     testing.log_level = .info;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -42,8 +47,7 @@ test "Hello, World!" {
     var engine = try backstage.Engine.init(allocator);
     defer engine.deinit();
 
-    const test_actor = try engine.getActor(HelloWorldStringActorProxy, "test_actor");
-    try test_actor.logHelloWorld("Hello, world!");
+    const test_actor = try engine.getActor(DiscaredVariableActorProxy, "test_actor");
+    try test_actor.handleDiscaredVariable("Hello, world!", 1, 42);
     try engine.loop.run(.once);
-    try testing.expect(test_actor.underlying.hello_world_received);
 }
