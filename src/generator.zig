@@ -62,6 +62,18 @@ const MethodInfo = struct {
     }
 };
 
+const AliasInfo = struct {
+    name: []u8,
+    module_name: []u8,
+    member_name: []u8,
+
+    pub fn deinit(self: AliasInfo, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.module_name);
+        allocator.free(self.member_name);
+    }
+};
+
 fn discoverMarkedActors(allocator: std.mem.Allocator, scan_dirs: []const []const u8) !std.ArrayList(ActorInfo) {
     var actor_files = std.ArrayList(ActorInfo).init(allocator);
 
@@ -556,6 +568,14 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
         imports.deinit();
     }
 
+    const aliases = try findAliasesInAst(allocator, &ast, imports.items);
+    defer {
+        for (aliases.items) |alias_info| {
+            alias_info.deinit(allocator);
+        }
+        aliases.deinit();
+    }
+
     var custom_types = std.ArrayList([]u8).init(allocator);
     defer {
         for (custom_types.items) |type_name| {
@@ -605,6 +625,8 @@ fn generateActorProxy(allocator: std.mem.Allocator, writer: anytype, struct_name
     }
 
     try generateImportsFromAst(allocator, writer, imports.items, file_path, output_dir);
+
+    try generateAliasesFromAst(allocator, writer, aliases.items, imports.items);
 
     try writer.writeAll(
         \\
@@ -842,6 +864,106 @@ fn extractImportFromNode(allocator: std.mem.Allocator, ast: *std.zig.Ast, node_i
     }
 
     return null;
+}
+
+fn findAliasesInAst(allocator: std.mem.Allocator, ast: *std.zig.Ast, imports: []const ImportInfo) !std.ArrayList(AliasInfo) {
+    var aliases = std.ArrayList(AliasInfo).init(allocator);
+
+    const node_tags = ast.nodes.items(.tag);
+
+    for (node_tags, 0..) |tag, i| {
+        switch (tag) {
+            .simple_var_decl, .local_var_decl, .global_var_decl => {
+                const node_idx: std.zig.Ast.Node.Index = @enumFromInt(@as(u32, @intCast(i)));
+                if (try extractAliasFromNode(allocator, ast, node_idx, imports)) |alias_info| {
+                    try aliases.append(alias_info);
+                }
+            },
+            else => continue,
+        }
+    }
+
+    return aliases;
+}
+
+fn extractAliasFromNode(allocator: std.mem.Allocator, ast: *std.zig.Ast, node_idx: std.zig.Ast.Node.Index, imports: []const ImportInfo) !?AliasInfo {
+    const main_tokens = ast.nodes.items(.main_token);
+    const token_tags = ast.tokens.items(.tag);
+
+    const main_token = main_tokens[@intFromEnum(node_idx)];
+
+    var token_idx = main_token;
+    var var_name: ?[]const u8 = null;
+    var module_name: ?[]const u8 = null;
+    var member_name: ?[]const u8 = null;
+
+    if (token_idx < token_tags.len and token_tags[token_idx] == .keyword_const) {
+        token_idx += 1;
+    }
+
+    if (token_idx < token_tags.len and token_tags[token_idx] == .identifier) {
+        var_name = ast.tokenSlice(token_idx);
+        token_idx += 1;
+    }
+
+    while (token_idx < token_tags.len and token_tags[token_idx] != .equal) {
+        token_idx += 1;
+    }
+    if (token_idx < token_tags.len) token_idx += 1;
+
+    if (token_idx < token_tags.len and token_tags[token_idx] == .identifier) {
+        const potential_module = ast.tokenSlice(token_idx);
+        token_idx += 1;
+
+        if (token_idx < token_tags.len and token_tags[token_idx] == .period) {
+            token_idx += 1;
+
+            if (token_idx < token_tags.len and token_tags[token_idx] == .identifier) {
+                const potential_member = ast.tokenSlice(token_idx);
+
+                for (imports) |import_info| {
+                    if (std.mem.eql(u8, import_info.name, potential_module)) {
+                        module_name = potential_module;
+                        member_name = potential_member;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (var_name != null and module_name != null and member_name != null) {
+        return AliasInfo{
+            .name = try allocator.dupe(u8, var_name.?),
+            .module_name = try allocator.dupe(u8, module_name.?),
+            .member_name = try allocator.dupe(u8, member_name.?),
+        };
+    }
+
+    return null;
+}
+
+fn generateAliasesFromAst(allocator: std.mem.Allocator, writer: anytype, aliases: []const AliasInfo, imports: []const ImportInfo) !void {
+    _ = allocator;
+
+    for (aliases) |alias_info| {
+        var skip_alias = false;
+        for (imports) |import_info| {
+            if (std.mem.eql(u8, import_info.name, alias_info.module_name)) {
+                if (std.mem.eql(u8, import_info.path, "std") or
+                    std.mem.eql(u8, import_info.path, "backstage") or
+                    std.mem.eql(u8, import_info.path, "testing"))
+                {
+                    skip_alias = true;
+                    break;
+                }
+            }
+        }
+
+        if (!skip_alias) {
+            try writer.print("const {s} = {s}.{s};\n", .{ alias_info.name, alias_info.module_name, alias_info.member_name });
+        }
+    }
 }
 
 fn generateImportsFromAst(allocator: std.mem.Allocator, writer: anytype, imports: []const ImportInfo, file_path: []const u8, output_dir: []const u8) !void {
