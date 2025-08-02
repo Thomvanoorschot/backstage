@@ -536,7 +536,21 @@ fn structNameToSnakeCase(allocator: std.mem.Allocator, struct_name: []const u8) 
 
     for (struct_name, 0..) |char, i| {
         if (std.ascii.isUpper(char)) {
-            if (i > 0) {
+            const should_add_underscore = if (i > 0) blk: {
+                const prev_char = struct_name[i - 1];
+                if (std.ascii.isLower(prev_char)) {
+                    break :blk true;
+                }
+                if (std.ascii.isUpper(prev_char) and i + 1 < struct_name.len) {
+                    const next_char = struct_name[i + 1];
+                    if (std.ascii.isLower(next_char)) {
+                        break :blk true;
+                    }
+                }
+                break :blk false;
+            } else false;
+
+            if (should_add_underscore) {
                 try result.append('_');
             }
             try result.append(std.ascii.toLower(char));
