@@ -1019,11 +1019,19 @@ fn isTypeDefinedInAst(ast: *std.zig.Ast, type_name: []const u8) !bool {
                     const name = ast.tokenSlice(token_idx);
                     if (std.mem.eql(u8, name, type_name)) {
                         token_idx += 1;
-                        while (token_idx < token_tags.len and token_tags[token_idx] != .keyword_struct) {
+                        while (token_idx < token_tags.len and
+                            token_tags[token_idx] != .keyword_struct and
+                            token_tags[token_idx] != .keyword_enum and
+                            token_tags[token_idx] != .keyword_union)
+                        {
                             if (token_tags[token_idx] == .semicolon) break;
                             token_idx += 1;
                         }
-                        if (token_idx < token_tags.len and token_tags[token_idx] == .keyword_struct) {
+                        if (token_idx < token_tags.len and
+                            (token_tags[token_idx] == .keyword_struct or
+                                token_tags[token_idx] == .keyword_enum or
+                                token_tags[token_idx] == .keyword_union))
+                        {
                             return true;
                         }
                     }
