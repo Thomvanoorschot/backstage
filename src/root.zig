@@ -8,7 +8,8 @@ pub const Registry = @import("registry.zig").Registry;
 pub const MethodCall = @import("envelope.zig").MethodCall;
 pub const newSubscriber = @import("stream.zig").newSubscriber;
 
-const zbor = @import("zbor");
+pub const zbor = @import("zbor");
 pub const zborParse = zbor.parse;
 pub const zborStringify = zbor.stringify;
 pub const zborDataItem = zbor.DataItem;
+pub const zborOptions = zbor.Options;

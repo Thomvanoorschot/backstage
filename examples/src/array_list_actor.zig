@@ -6,6 +6,9 @@ const Engine = backstage.Engine;
 const Context = backstage.Context;
 const Envelope = backstage.Envelope;
 const ArrayListActorProxy = @import("generated/array_list_actor_proxy.gen.zig").ArrayListActorProxy;
+const zborOptions = backstage.zborOptions;
+pub const zborStringify = backstage.zborStringify;
+pub const zbor = backstage.zbor;
 
 // @generate-proxy
 pub const ArrayListActor = struct {
@@ -49,6 +52,38 @@ pub const StructWithArrayList = struct {
 
     pub fn deinit(self: *Self) void {
         self.array_list.deinit();
+    }
+
+    // With arrayLists we need to manually stringify and parse
+    pub fn cborStringify(self: Self, o: zborOptions, out: anytype) !void {
+        try zbor.builder.writeMap(out, 2);
+        try zbor.builder.writeTextString(out, "name");
+        try zbor.builder.writeTextString(out, self.name);
+        try zbor.builder.writeTextString(out, "array_list");
+        try zborStringify(self.array_list.items, .{ .allocator = o.allocator }, out);
+    }
+
+    pub fn cborParse(item: backstage.zborDataItem, options: backstage.zborOptions) !Self {
+        var map = if (item.map()) |m| m else return error.UnexpectedItem;
+
+        const allocator = options.allocator orelse return error.AllocatorRequired;
+        var result = Self{
+            .name = undefined,
+            .array_list = std.ArrayList(ListItem).init(allocator),
+        };
+
+        while (map.next()) |kv| {
+            const key_str = if (kv.key.string()) |s| s else continue;
+            if (std.mem.eql(u8, key_str, "name")) {
+                result.name = try backstage.zborParse([]const u8, kv.value, options);
+            } else if (std.mem.eql(u8, key_str, "array_list")) {
+                const items = try backstage.zborParse([]const ListItem, kv.value, options);
+                try result.array_list.appendSlice(items);
+                allocator.free(items);
+            }
+        }
+
+        return result;
     }
 };
 
