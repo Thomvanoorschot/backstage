@@ -8,48 +8,36 @@ const Engine = engine.Engine;
 const Envelope = envlp.Envelope;
 const MessageType = envlp.MessageType;
 const ActorInterface = actr.ActorInterface;
+const MethodCall = envlp.MethodCall;
 
-pub fn enqueueMessage(
+pub fn enqueueMethodCall(
     self: *Engine,
     sender_id: ?[]const u8,
     target_id: []const u8,
-    message_type: MessageType,
-    message: anytype,
+    method_call: MethodCall,
 ) !void {
     const actor = self.registry.getByID(target_id);
     if (actor) |a| {
-        const T = @TypeOf(message);
-        switch (@typeInfo(T)) {
-            .pointer => |ptr| {
-                if (ptr.child != u8 and @typeInfo(ptr.child) != .array) {
-                    @compileError("Only []const u8 or string literals supported");
-                }
-                if (@typeInfo(ptr.child) == .array) {
-                    if (@typeInfo(ptr.child).array.child != u8) {
-                        @compileError("Only []const u8 or string literals supported");
-                    }
-                }
-            },
-            .@"struct" => if (!comptime type_utils.hasMethod(T, "encode")) @compileError("Struct must have encode() method"),
-            else => @compileError("Message must be []const u8, a string literal or struct with an encode() method"),
-        }
-
-        const message_data = if (@typeInfo(T) == .@"struct") blk: {
-            break :blk try message.encode(self.allocator);
-        } else blk: {
-            break :blk message;
-        };
-        defer if (@typeInfo(T) == .@"struct") self.allocator.free(message_data);
+        const method_call_bytes = try method_call.encode(self.allocator);
+        defer self.allocator.free(method_call_bytes);
 
         const envelope = Envelope.init(
             sender_id,
-            message_type,
-            message_data,
+            .method_call,
+            method_call_bytes,
         );
         try a.inbox.enqueue(envelope);
         try a.notifyMessageHandler();
     } else {
         std.log.warn("Actor not found: {s}", .{target_id});
+    }
+}
+
+pub fn enqueuePoisonPill(self: *Engine, target_id: []const u8) !void {
+    const actor = self.registry.getByID(target_id);
+    if (actor) |a| {
+        try a.inbox.enqueue(Envelope.init(null, .poison_pill, ""));
+        try a.notifyMessageHandler();
     }
 }
 

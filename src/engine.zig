@@ -109,7 +109,7 @@ pub const Engine = struct {
     pub fn publishToStream(self: *Engine, stream_id: []const u8, encoded_data: []const u8) !void {
         const subscriptions = self.stream_registry.getSubscriptions(stream_id);
         for (subscriptions) |subscription| {
-            try internal.enqueueMessage(
+            try internal.enqueueMethodCall(
                 self,
                 null,
                 subscription.actor_id,
@@ -122,12 +122,9 @@ pub const Engine = struct {
         }
     }
     pub fn poisonPill(self: *Self, target_id: []const u8) !void {
-        return internal.enqueueMessage(
+        return internal.enqueuePoisonPill(
             self,
-            null,
             target_id,
-            .poison_pill,
-            "",
         );
     }
 };

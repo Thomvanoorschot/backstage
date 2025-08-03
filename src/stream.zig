@@ -35,11 +35,10 @@ pub const Stream = struct {
                 try stringify(payload, .{}, str.writer());
 
                 for (stream.subscribers.items) |subscription| {
-                    try engine_internal.enqueueMessage(
+                    try engine_internal.enqueueMethodCall(
                         stream.engine,
                         null,
                         subscription.actor_id,
-                        .method_call,
                         MethodCall{
                             .method_id = subscription.method_id,
                             .params = str.items,
@@ -96,7 +95,7 @@ pub fn newSubscriber(actor_id: []const u8, comptime method: anytype) Subscriber 
             }
             break :blk @intFromEnum(method);
         },
-        .@"int" => blk: {
+        .int => blk: {
             if (@TypeOf(method) != u32) {
                 @compileError("Integer must be u32, got " ++ @typeName(@TypeOf(method)));
             }
