@@ -59,11 +59,7 @@ pub const ReceiverActor = struct {
 
 test "Actor to actor" {
     testing.log_level = .info;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var engine = try backstage.Engine.init(allocator);
+    var engine = try backstage.Engine.init(std.testing.allocator);
     defer engine.deinit();
 
     const sender_actor = try engine.getActor(SenderActorProxy, "sender_actor");
