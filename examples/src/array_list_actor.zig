@@ -94,15 +94,11 @@ pub const ListItem = struct {
 
 test "Hello, World!" {
     testing.log_level = .info;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var engine = try backstage.Engine.init(allocator);
+    var engine = try backstage.Engine.init(std.testing.allocator);
     defer engine.deinit();
 
     const test_actor = try engine.getActor(ArrayListActorProxy, "test_actor");
-    var struct_with_array_list = try StructWithArrayList.init(allocator);
+    var struct_with_array_list = try StructWithArrayList.init(std.testing.allocator);
     defer struct_with_array_list.deinit();
     try test_actor.handleStructWithArrayList(struct_with_array_list);
     try engine.loop.run(.once);

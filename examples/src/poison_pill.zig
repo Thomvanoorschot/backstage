@@ -31,11 +31,7 @@ pub const PoisonPillActor = struct {
 
 test "Poison pill" {
     testing.log_level = .info;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var engine = try backstage.Engine.init(allocator);
+    var engine = try backstage.Engine.init(std.testing.allocator);
     defer engine.deinit();
 
     const test_actor = try engine.getActor(PoisonPillActorProxy, "test_actor");

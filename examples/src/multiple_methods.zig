@@ -56,11 +56,7 @@ test "Lazy actor with simple parameter method call" {
 
 test "Lazy actor with struct parameter method call" {
     testing.log_level = .info;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var engine = try backstage.Engine.init(allocator);
+    var engine = try backstage.Engine.init(std.testing.allocator);
     defer engine.deinit();
 
     const test_actor = try engine.getActor(MultipleMethodsActorProxy, "test_actor");

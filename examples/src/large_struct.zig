@@ -45,14 +45,10 @@ pub const LargeStruct = struct {
 };
 test "Large struct" {
     testing.log_level = .info;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var engine = try backstage.Engine.init(allocator);
+    var engine = try backstage.Engine.init(std.testing.allocator);
     defer engine.deinit();
 
-    var big_message_list = std.ArrayList([]const u8).init(allocator);
+    var big_message_list = std.ArrayList([]const u8).init(std.testing.allocator);
     defer big_message_list.deinit();
     for (0..20) |_| {
         try big_message_list.append("Lorem ipsum dolor sit amet consectetur adipiscing elit. Quisque faucibus ex sapien vitae pellentesque sem placerat. In id cursus mi pretium tellus duis convallis. Tempus leo eu aenean sed diam urna tempor. Pulvinar vivamus fringilla lacus nec metus bibendum egestas. Iaculis massa nisl malesuada lacinia integer nunc posuere. Ut hendrerit semper vel class aptent taciti sociosqu. Ad litora torquent per conubia nostra inceptos himenaeos.");
